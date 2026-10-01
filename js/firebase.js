@@ -2,6 +2,8 @@
  * firebase.js — Firebase 連線 / 個人沙盤 / 房間沙盤 / 聊天 / 編輯權限 / 退出
  *                + v8.8.0 地圖庫
  *                + v9.0.0 共享沙盤 API
+ *
+ * v9.0.0-fix：修正 sharedIndexRef 名稱衝突（變數 vs 函式）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -64,8 +66,9 @@ let mapLibraryMapRef = null;
 let mapLibraryMapHandler = null;
 let currentWatchedMapId = '';
 
-/* ★ v9.0.0：共享沙盤監聽 */
-let sharedIndexRef = null;
+/* ★ v9.0.0：共享沙盤監聽
+ * ⚠️ 變數名稱使用 sharedIndexRefNode，避免與下方 function sharedIndexRef() 同名衝突 */
+let sharedIndexRefNode = null;
 let sharedIndexHandler = null;
 let sharedWatchers = new Map();   /* { sandboxId: { ref, handler } } */
 
@@ -206,7 +209,6 @@ async function loadMySandbox(){
         try{
           payload = window.SLG.DataMigrations.migrate(raw);
           logSystem(`🔀 個人沙盤已升級至 v${window.SLG.DATA_VERSION}`);
-          /* 遷移後存回 */
           try{
             await sandboxRef(u).update({
               dataVersion: payload.dataVersion,
@@ -216,7 +218,6 @@ async function loadMySandbox(){
           }catch(e){}
         }catch(e){
           console.warn('[遷移] 個人沙盤遷移失敗', e);
-          /* 遷移失敗：保留本機，不覆蓋 */
           state.mySandbox.loading = false;
           state.mySandbox.cloudLoaded = true;
           alert('⚠️ 個人沙盤版本不相容，已保留本機資料。\n\n請聯繫管理員。');
@@ -376,8 +377,7 @@ async function createSandboxBackup(){
 }
 
 /* ====== 第 5 批 Part A 結束 ====== */
-/* Part B 將從此處接續（房間沙盤 + 連線 + 編輯鎖 + 聊天 + 權限） */
-/* ====== 第 5 批 Part B：房間沙盤 + 連線 + 編輯鎖 + 聊天 + 權限 ====== */
+/* Part B：房間沙盤 + 連線 + 編輯鎖 + 聊天 + 權限 */
 
 /* ============================================================
    房間沙盤 API
@@ -520,7 +520,6 @@ async function onFirebaseConnected(asHost){
   try{
     const roomSnap = await fetchRoomSnapshot(state.roomCode);
     if(roomSnap && roomSnap.data){
-      /* ★ v9.0.0：房間沙盤也做遷移 */
       let payload = roomSnap;
       if(window.SLG.DataMigrations && window.SLG.DataMigrations.needsMigration(roomSnap)){
         try{
@@ -615,7 +614,6 @@ async function onFirebaseConnected(asHost){
       state.roomSnapshot = val;
       state.roomHasSnapshot = true;
       if(val.updatedAt > prevUpdatedAt && val.updatedBy !== state.auth.accountUid){
-        /* ★ v9.0.0：即時套用時先遷移 */
         let payload = val;
         if(window.SLG.DataMigrations && window.SLG.DataMigrations.needsMigration(val)){
           try{
@@ -1050,8 +1048,7 @@ async function confirmExit(choice){
 }
 
 /* ====== 第 5 批 Part B 結束 ====== */
-/* Part C 將從此處接續（共享沙盤 API + 地圖庫 + 暴露） */
-/* ====== 第 5 批 Part C：共享沙盤 API + 地圖庫 + 暴露 ====== */
+/* Part C：共享沙盤 API + 地圖庫 + 暴露 */
 
 /* ============================================================
    ★ v9.0.0：共享沙盤 API
@@ -1104,7 +1101,6 @@ async function saveSharedSandbox(sandboxId, payload){
     updatedByName: state.auth.displayName || '',
   });
 
-  /* 更新索引 */
   const mapIds = Array.isArray(fullPayload.mapIds) ? fullPayload.mapIds : [];
   const cityCount = fullPayload.data?.cities?.length || 0;
   const allianceCount = fullPayload.data?.alliances?.length || 0;
@@ -1183,13 +1179,11 @@ async function restoreSharedSandboxFromHistory(sandboxId, ts){
   const item = snap.val();
   if(!item || !item.data){ throw new Error('找不到此歷史版本'); }
 
-  /* 遷移 */
   let migrated = { data: item.data, dataVersion: item.dataVersion || 0 };
   if(window.SLG.DataMigrations && window.SLG.DataMigrations.needsMigration(migrated)){
     migrated = window.SLG.DataMigrations.migrate(migrated);
   }
 
-  /* 備份當前版本 */
   try{
     const currentSnap = await sharedSandboxRef(sandboxId).once('value');
     const current = currentSnap.val();
@@ -1206,7 +1200,6 @@ async function restoreSharedSandboxFromHistory(sandboxId, ts){
     }
   }catch(e){ console.warn('[SharedSB] 備份當前版本失敗', e); }
 
-  /* 套用歷史資料 */
   const newVersion = (item.version || 0) + 1;
   await sharedSandboxRef(sandboxId).update({
     data: migrated.data,
@@ -1222,15 +1215,17 @@ async function restoreSharedSandboxFromHistory(sandboxId, ts){
   return true;
 }
 
-/* ── 共享沙盤即時監聽（索引）── */
+/* ── 共享沙盤即時監聽（索引）
+ * ⚠️ 使用 sharedIndexRefNode 作為變數，避免與 function sharedIndexRef() 衝突
+ * ── */
 function startSharedIndexWatcher(){
   if(!fbDb) return;
   if(!state.auth.signedIn) return;
   if(!isOnline()) return;
   stopSharedIndexWatcher();
 
-  sharedIndexRef = sharedIndexRef();
-  sharedIndexHandler = sharedIndexRef.on('value', snap => {
+  sharedIndexRefNode = sharedIndexRef();
+  sharedIndexHandler = sharedIndexRefNode.on('value', snap => {
     const val = snap.val() || {};
     state.sharedSandboxesIndex = val;
     emit(EVT.SHARED_SANDBOXES_UPDATED, { type: 'index-updated', index: val });
@@ -1240,10 +1235,10 @@ function startSharedIndexWatcher(){
 }
 
 function stopSharedIndexWatcher(){
-  if(sharedIndexRef && sharedIndexHandler){
-    try{ sharedIndexRef.off('value', sharedIndexHandler); }catch(e){}
+  if(sharedIndexRefNode && sharedIndexHandler){
+    try{ sharedIndexRefNode.off('value', sharedIndexHandler); }catch(e){}
   }
-  sharedIndexRef = null;
+  sharedIndexRefNode = null;
   sharedIndexHandler = null;
 }
 
@@ -1258,7 +1253,6 @@ function startSharedSandboxWatcher(sandboxId){
   const handler = ref.on('value', snap => {
     const val = snap.val();
     if(!val){
-      /* 被刪除 */
       if(state.activeSharedSandboxId === sandboxId){
         alert('⚠️ 當前共享沙盤已被刪除');
         state.activeSharedSandboxId = '';
@@ -1271,7 +1265,6 @@ function startSharedSandboxWatcher(sandboxId){
       return;
     }
 
-    /* 只有當版本更新，且不是自己改的 → 提示 */
     const localVer = state.sharedSandboxVersion || 0;
     const cloudVer = val.version || 0;
     if(cloudVer > localVer && state.activeSharedSandboxId === sandboxId){
@@ -1855,5 +1848,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * firebase.js 結束（v9.0.0）
+ * firebase.js 結束（v9.0.0-fix）
  * ========================================================================== */
