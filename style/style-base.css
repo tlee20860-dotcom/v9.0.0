@@ -1180,3 +1180,57 @@ select{
   .card{ padding:10px; }
   .form-row{ gap:6px; }
 }
+/* ============================================================
+   ★ v9.0.0-fix：手機版 mode-bar 橫向滑動
+   ============================================================ */
+@media (max-width:768px){
+  /* 讓整個 mode-bar 可橫向滾動 */
+  .mode-bar{
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;           /* Firefox 隱藏捲軸 */
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 8px;
+  }
+  .mode-bar::-webkit-scrollbar{
+    display: none;                    /* Chrome / Safari 隱藏捲軸 */
+  }
+
+  /* 讓內層不被壓縮 */
+  .mode-bar-inner{
+    width: max-content;               /* ⭐ 關鍵：改成內容寬度 */
+    min-width: max-content;
+    max-width: none;
+    flex-wrap: nowrap;
+    padding-right: 16px;              /* 尾端留空隙 */
+  }
+
+  /* 各元素固定寬度不壓縮 */
+  .mode-bar-inner > *{
+    flex: 0 0 auto;
+  }
+
+  /* 模式文字縮小（若還想顯示） */
+  .mode-indicator{
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* 同步狀態文字縮小 */
+  .sync-text{
+    font-size: 9px;
+  }
+
+  /* 右側漸層提示（表示可滑動） */
+  .mode-bar::after{
+    content: '';
+    position: sticky;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 20px;
+    background: linear-gradient(90deg, transparent, rgba(10,14,23,.85));
+    pointer-events: none;
+    flex: 0 0 0;
+  }
+}
