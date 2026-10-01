@@ -2994,7 +2994,6 @@ Object.assign(window.SLG, {
   renderIconQuickRow: () => { const R = window.SLG.R; if(R) R.renderIconQuickRow(); },
   renderNarrative: (lines) => { const R = window.SLG.R; if(R) R.renderNarrative(lines); },
   renderDebug: (p) => { const R = window.SLG.R; if(R) R.renderDebug(p); },
-  renderSyncStatus: () => window.SLG.renderSyncStatus(),
 
   /* 房間 UI */
   updateRoomEditButton,
