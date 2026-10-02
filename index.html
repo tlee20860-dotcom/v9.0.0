@@ -751,8 +751,10 @@
             <div style="flex:2;"><label>搜尋</label><input type="text" id="citySearchInput" placeholder="城池名稱 / 編號..."></div>
           </div>
 
-          <div class="city-batch-bar" id="cityBatchBar" style="display:none;">
+                   <div class="city-batch-bar" id="cityBatchBar" style="display:none;">
             <span>已選 <b id="cityBatchCount">0</b> 個</span>
+            <select id="cityBatchMap"><option value="">更改地圖...</option></select>
+            <button class="btn btn-primary btn-sm" id="btnCityBatchApplyMap">套用</button>
             <select id="cityBatchZone"><option value="">更改戰區...</option></select>
             <button class="btn btn-primary btn-sm" id="btnCityBatchApplyZone">套用</button>
             <select id="cityBatchAlliance"><option value="">更改所屬盟...</option></select>
