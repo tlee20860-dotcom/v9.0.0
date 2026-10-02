@@ -204,6 +204,18 @@ const CityManager = (() => {
       });
     }
 
+       /* ── 批次套用：地圖（★ v9.0.5）── */
+    const btnApplyMap = document.getElementById('btnCityBatchApplyMap');
+    if(btnApplyMap && !btnApplyMap.dataset.bound){
+      btnApplyMap.dataset.bound = '1';
+      btnApplyMap.addEventListener('click', () => {
+        const raw = document.getElementById('cityBatchMap').value;
+        if(!raw){ alert('請選擇地圖'); return; }
+        const mapId = (raw === '__CLEAR__') ? '' : raw;
+        applyBatch('mapId', mapId);
+      });
+    }
+
     /* ── 批次套用：戰區 ── */
     const btnApplyZone = document.getElementById('btnCityBatchApplyZone');
     if(btnApplyZone && !btnApplyZone.dataset.bound){
@@ -414,10 +426,109 @@ const CityManager = (() => {
     if(cnt) cnt.textContent = ids.length;
   }
 
-  function applyBatch(field, value){
+    function applyBatch(field, value){
     const state = getState();
     const ids = getCheckedIds();
     if(ids.length === 0){ alert('請先勾選城池'); return; }
+
+    /* ★ v9.0.5：批次改地圖 → 特殊處理 */
+    if(field === 'mapId'){
+      if(!value){
+        /* 清除地圖 → 移除 mapNode + 清 Firebase 節點 */
+        let clearCount = 0;
+        for(const id of ids){
+          const city = state.cities.find(c => c.id === id);
+          if(!city) continue;
+          if(city.mapNode){
+            delete city.mapNode;
+            if(window.SLG.DataSyncManager){
+              window.SLG.DataSyncManager.deleteNode(id, { silent: true }).catch(e => {
+                console.warn('[BatchMap] 刪除節點失敗', e);
+              });
+            }
+            state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
+            if(window.SLG.markDirty) window.SLG.markDirty('city', id);
+            clearCount++;
+          }
+        }
+        if(window.SLG.tickLamport) window.SLG.tickLamport();
+        if(window.SLG.flushPatches) window.SLG.flushPatches();
+        if(window.SLG.saveState) window.SLG.saveState('important');
+        render();
+        if(window.SLG.GameMap){
+          if(window.SLG.GameMap.invalidateLayout) window.SLG.GameMap.invalidateLayout();
+          window.SLG.GameMap.render();
+        }
+        if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
+        if(window.SLG.renderOverview) window.SLG.renderOverview();
+        logSystem(`✅ 已批次清除 ${clearCount} 座城池的地圖`);
+        return;
+      }
+
+      /* 指定地圖 → 自動分配臨時座標 */
+      let setCount = 0;
+      for(const id of ids){
+        const city = state.cities.find(c => c.id === id);
+        if(!city) continue;
+
+        /* 若已在此地圖 → 跳過（不需重分配） */
+        if(city.mapNode && city.mapNode.mapId === value){
+          state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
+          if(window.SLG.markDirty) window.SLG.markDirty('city', id);
+          continue;
+        }
+
+        /* 產生 hash 座標（與 inline 編輯一致） */
+        const hash = (str) => {
+          let h = 0;
+          for(let k = 0; k < str.length; k++) h = ((h << 5) - h) + str.charCodeAt(k);
+          return Math.abs(h);
+        };
+        const h = hash(id);
+        const ang = (h % 360) * Math.PI / 180;
+        const r = 400 + (h % 300);
+        const x = 1000 + Math.cos(ang) * r;
+        const y = 1000 + Math.sin(ang) * r;
+
+        if(window.SLG.DataSyncManager){
+          window.SLG.DataSyncManager.setNode(id, x, y, {
+            source: 'batch-map',
+            mapId: value,
+          });
+        } else {
+          /* 沒 DataSyncManager 時手動寫 */
+          city.mapNode = {
+            mapId: value,
+            nodeId: city.code || ('n_' + id),
+            x: Math.round(x),
+            y: Math.round(y),
+            method: 'batch-map',
+          };
+          state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
+          if(window.SLG.markDirty) window.SLG.markDirty('city', id);
+        }
+        setCount++;
+      }
+
+      if(window.SLG.tickLamport) window.SLG.tickLamport();
+      if(window.SLG.flushPatches) window.SLG.flushPatches();
+      if(window.SLG.saveState) window.SLG.saveState('important');
+      render();
+      if(window.SLG.GameMap){
+        if(window.SLG.GameMap.invalidateLayout) window.SLG.GameMap.invalidateLayout();
+        window.SLG.GameMap.refreshZoneSelector?.();
+        window.SLG.GameMap.render();
+      }
+      if(window.SLG.R && window.SLG.R.renderCities) window.SLG.R.renderCities();
+      if(window.SLG.renderOverview) window.SLG.renderOverview();
+
+      const mapName = state.mapLibrary.index?.[value]?.name || '未命名';
+      logSystem(`✅ 已批次修改 ${setCount} 座城池的地圖 → ${mapName}`);
+      alert(`✅ 已將 ${setCount} 座城池指派到「${mapName}」\n\n（已自動分配臨時座標，可至節點校準微調）`);
+      return;
+    }
+
+    /* 其他欄位（戰區 / 盟 / 陣營）一般處理 */
     for(const id of ids){
       const city = state.cities.find(c => c.id === id);
       if(!city) continue;
@@ -692,8 +803,9 @@ const CityManager = (() => {
      主渲染
      ══════════════════════════════════════════════════════ */
   function render(){
-    const state = getState();
+   const state = getState();
     populateFilters();
+    populateBatchMapOptions();   /* ★ v9.0.5 */
     populateBatchZoneOptions();
     populateBatchAllianceOptions();
 
@@ -874,6 +986,30 @@ const CityManager = (() => {
           `<option value="${a.id}">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</option>`
         ).join('');
       aSel.value = cur && state.alliances.find(a => a.id === cur) ? cur : 'all';
+    }
+  }
+
+  /* ══════════════════════════════════════════════════════
+     ★ v9.0.5：批次地圖下拉填充
+     ══════════════════════════════════════════════════════ */
+  function populateBatchMapOptions(){
+    const state = getState();
+    const sel = document.getElementById('cityBatchMap');
+    if(!sel) return;
+    const cur = sel.value;
+    const mapIdx = state.mapLibrary.index || {};
+    const mapIds = Object.keys(mapIdx).sort((a, b) => (mapIdx[b].updatedAt || 0) - (mapIdx[a].updatedAt || 0));
+
+    let html = '<option value="">更改地圖...</option>';
+    html += '<option value="__CLEAR__">（清除地圖 / 未指派）</option>';
+    for(const mid of mapIds){
+      html += `<option value="${mid}">${esc(mapIdx[mid].name || '未命名')}</option>`;
+    }
+    sel.innerHTML = html;
+
+    if(cur){
+      const valid = (cur === '__CLEAR__') || mapIdx[cur];
+      if(valid) sel.value = cur;
     }
   }
 
