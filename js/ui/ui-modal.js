@@ -1727,10 +1727,24 @@ const NodeCalibration = (() => {
     const el = document.getElementById('nc_cityList');
     if(!el) return;
     const state = getState();
+    const currentMapId = mapId;   /* ★ v9.0.8：當前校準的地圖 ID */
 
-    const list = state.cities.map(c => {
-      const nid = cityNodeId(c);
-      const n = nodes[nid];
+    /* ★ v9.0.8：只顯示「未定位」或「定位在當前地圖」的城池 */
+    const visibleCities = state.cities.filter(c => {
+      /* 沒 mapNode → 一定顯示（可在此地圖標記） */
+      if(!c.mapNode || typeof c.mapNode.x !== 'number') return true;
+      /* 有 mapNode 但 mapId 空 → 視為未綁定，顯示 */
+      if(!c.mapNode.mapId) return true;
+      /* 有 mapNode 且 mapId 相符 → 顯示（正在編輯） */
+      if(c.mapNode.mapId === currentMapId) return true;
+      /* 有 mapNode 但 mapId 不符 → 隱藏（屬於其他地圖） */
+      return false;
+    });
+
+    const list = visibleCities.map(c => {
+      const found = findNodeForCity(c);
+      const n = found ? found.node : null;
+      const nid = found ? found.key : cityNodeId(c);
       return { city: c, node: n || null, isOrphan: false, nid: nid };
     });
 
@@ -1932,8 +1946,24 @@ const NodeCalibration = (() => {
 
   function updateProgress(){
     const state = getState();
-    const total = state.cities.length;
-    const done = Object.keys(nodes).length;
+    const currentMapId = mapId;
+
+    /* ★ v9.0.8：分母 = 「未定位」或「定位在當前地圖」的城池數 */
+    const visibleCities = state.cities.filter(c => {
+      if(!c.mapNode || typeof c.mapNode.x !== 'number') return true;
+      if(!c.mapNode.mapId) return true;
+      if(c.mapNode.mapId === currentMapId) return true;
+      return false;
+    });
+    const total = visibleCities.length;
+
+    /* 分子 = 這些城池中已標記的數量 */
+    let done = 0;
+    for(const c of visibleCities){
+      const found = findNodeForCity(c);
+      if(found && found.node) done++;
+    }
+
     const doneEl = document.getElementById('nc_doneCount');
     if(doneEl) doneEl.textContent = done;
     const totalEl = document.getElementById('nc_totalCount');
