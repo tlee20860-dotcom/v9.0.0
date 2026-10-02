@@ -4405,3 +4405,89 @@ body.map-fullscreen{ overflow:hidden !important; }
     overflow:hidden;
   }
 }
+/* ============================================================
+   ★ v9.0.9：手機版地圖工具列摺疊
+   ============================================================ */
+
+/* 摺疊按鈕（桌機隱藏、手機顯示） */
+.map-toolbar-toggle{
+  display:none;
+  width:100%;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  padding:8px 12px;
+  background:linear-gradient(135deg, rgba(30,58,95,.85), rgba(42,74,111,.85));
+  border:1px solid var(--neon-blue);
+  border-radius:var(--radius-sm);
+  color:var(--neon-blue);
+  font-size:12px;
+  font-weight:700;
+  cursor:pointer;
+  font-family:inherit;
+  letter-spacing:.3px;
+  transition:all .15s;
+  margin-bottom:6px;
+}
+.map-toolbar-toggle:hover{
+  background:linear-gradient(135deg, rgba(42,74,111,1), rgba(68,170,255,.3));
+  color:#fff;
+}
+.map-toolbar-toggle:active{ transform:scale(.98); }
+.map-toolbar-toggle .toggle-icon{
+  font-size:10px;
+  transition:transform .2s;
+}
+
+/* 摺疊狀態：隱藏工具列內容（保留 toggle 按鈕） */
+.map-toolbar.collapsed{
+  padding:6px 8px;
+}
+.map-toolbar.collapsed > *:not(.map-toolbar-toggle){
+  display:none !important;
+}
+
+/* ── 手機版（<= 768px）── */
+@media (max-width:768px){
+  .map-toolbar-toggle{
+    display:flex;
+  }
+  /* 桌機版預設展開 → 手機版預設摺疊 */
+  .map-toolbar:not(.collapsed) > *:not(.map-toolbar-toggle){
+    /* 展開時的樣式（橫向緊湊） */
+    flex:0 0 auto;
+  }
+  /* 手機版工具列整體微調 */
+  .map-toolbar{
+    gap:6px;
+    padding:6px 8px;
+  }
+  /* 展開時按鈕更小 */
+  .map-toolbar .btn{
+    font-size:11px;
+    padding:5px 10px;
+  }
+  /* 手機版地圖高度（摺疊時更充分利用） */
+  .game-map-outer{
+    transition:height .25s ease-out;
+  }
+  /* 摺疊時地圖可以更高（自動填滿） */
+  .map-toolbar.collapsed + #gameMapOuter,
+  .map-toolbar.collapsed + * #gameMapOuter{
+    height:calc(100vh - 220px) !important;
+  }
+}
+
+/* ── 平板（769px - 1024px）── */
+@media (min-width:769px) and (max-width:1024px){
+  .map-toolbar-toggle{
+    display:flex;
+  }
+}
+
+/* ── 桌機（> 1024px）── */
+@media (min-width:1025px){
+  /* 桌機版強制展開，隱藏 toggle 按鈕 */
+  .map-toolbar-toggle{ display:none !important; }
+  .map-toolbar.collapsed > *:not(.map-toolbar-toggle){ display:flex !important; }
+}
