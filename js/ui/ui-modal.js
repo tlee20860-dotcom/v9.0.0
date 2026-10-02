@@ -708,8 +708,56 @@ const NodeCalibration = (() => {
       nodes = normalizeNodeKeys(nodes, state.cities);
       /* ★ v9.0.3：合併 city.mapNode 到 nodes（同步大地圖新增的節點） */
       nodes = mergeCityMapNodes(nodes, state.cities, mapId);
-      natW = imageEl.naturalWidth || mapData.imageWidth || 0;
-      if(natW === 0 || natH === 0) throw new Error('圖片尺寸為 0');
+            /* ★ v9.0.3：多來源 fallback + decode 等待 */
+      natW = imageEl.naturalWidth || imageEl.width || mapData.imageWidth || 0;
+      natH = imageEl.naturalHeight || imageEl.height || mapData.imageHeight || 0;
+
+      /* 若還是 0 → 等待圖片完全解碼 */
+      if((natW === 0 || natH === 0) && imageEl && typeof imageEl.decode === 'function'){
+        try{
+          await imageEl.decode();
+          natW = imageEl.naturalWidth || imageEl.width || mapData.imageWidth || 0;
+          natH = imageEl.naturalHeight || imageEl.height || mapData.imageHeight || 0;
+          console.log(`[NodeCalibration] decode 成功：${natW}×${natH}`);
+        }catch(e){
+          console.warn('[NodeCalibration] decode 失敗', e);
+        }
+      }
+
+      /* 若還是 0 → 重新載入圖片（加時間戳避快取）*/
+      if((natW === 0 || natH === 0) && mapData && mapData.imageUrl){
+        console.warn('[NodeCalibration] 尺寸為 0，重新載入圖片...');
+        try{
+          const reloaded = await new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('圖片載入失敗'));
+            const url = mapData.imageUrl + (mapData.imageUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+            img.src = url;
+          });
+          imageEl = reloaded;
+          mapData.imageEl = reloaded;
+          natW = reloaded.naturalWidth || 0;
+          natH = reloaded.naturalHeight || 0;
+          console.log(`[NodeCalibration] 重新載入成功：${natW}×${natH}`);
+        }catch(e){
+          console.warn('[NodeCalibration] 重新載入失敗', e);
+        }
+      }
+
+      /* 最後 fallback：用預設尺寸（仍可操作）*/
+      if(natW === 0 || natH === 0){
+        console.warn('[NodeCalibration] ⚠️ 使用預設尺寸 2000×2000');
+        natW = 2000;
+        natH = 2000;
+        if(!imageEl){
+          const c = document.createElement('canvas');
+          c.width = natW;
+          c.height = natH;
+          imageEl = c;
+        }
+      }
       if(nameEl) nameEl.textContent = m.name || '未命名';
 
       setupCanvas();
