@@ -1491,7 +1491,7 @@ const GameMap = (() => {
     return null;
   }
 
-  function computeLayout(){
+    function computeLayout(){
     const state = getState();
     const cities = state.cities;
     if(cities.length === 0){ nodePositions.clear(); return; }
@@ -1500,10 +1500,15 @@ const GameMap = (() => {
 
     const currentMapId = state.mapLibrary.activeMapId;
 
-    if(activeMapNodes && Object.keys(activeMapNodes).length > 0){
+    /* ★ v9.0.7：有選定地圖 → 只顯示「有節點資料」的城池
+       未匹配的城池「不顯示」（不再分配臨時座標）
+       無選定地圖 → 力導向佈局（向後相容） */
+    if(currentMapId){
       nodePositions.clear();
       const unplaced = [];
+
       for(const c of cities){
+        /* ① 優先：city.mapNode（若 mapId 相符）*/
         const mapNodeUsable = c.mapNode &&
                               typeof c.mapNode.x === 'number' &&
                               typeof c.mapNode.y === 'number' &&
@@ -1512,49 +1517,37 @@ const GameMap = (() => {
           nodePositions.set(c.id, { x: c.mapNode.x, y: c.mapNode.y });
           continue;
         }
-        const n = resolveCityMapNode(c, activeMapNodes);
-        if(n){
-          nodePositions.set(c.id, { x: Number(n.x) || 0, y: Number(n.y) || 0 });
-        } else {
-          unplaced.push(c);
+
+        /* ② 次之：從地圖庫 activeMapNodes 匹配 */
+        if(activeMapNodes && Object.keys(activeMapNodes).length > 0){
+          const n = resolveCityMapNode(c, activeMapNodes);
+          if(n){
+            nodePositions.set(c.id, { x: Number(n.x) || 0, y: Number(n.y) || 0 });
+            continue;
+          }
+        }
+
+        /* ③ 都沒有 → 不顯示（列入 unplaced）*/
+        unplaced.push(c);
+      }
+
+      /* 只印一次警告（不分配臨時座標） */
+      if(unplaced.length > 0){
+        const sig = unplaced.map(c => c.name).sort().join('|');
+        if(window.__lastUnplacedSig !== sig){
+          window.__lastUnplacedSig = sig;
+          console.log(
+            `%c[GameMap] ${unplaced.length} 座城池未匹配當前地圖（不顯示）：${unplaced.slice(0, 5).map(c => c.name).join('、')}${unplaced.length > 5 ? ' 等' : ''}`,
+            'color:#94a3b8;font-size:11px'
+          );
         }
       }
 
-      if(unplaced.length > 0){
-        const W = CANVAS_W, H = CANVAS_H;
-        unplaced.forEach((c) => {
-          const hash = (str) => {
-            let h = 0;
-            for(let k = 0; k < str.length; k++){
-              h = ((h << 5) - h) + str.charCodeAt(k);
-              h |= 0;
-            }
-            return Math.abs(h);
-          };
-          const h = hash(c.id);
-          const ang = (h % 3600) / 3600 * Math.PI * 2;
-          const r = 400 + (h % 300);
-          nodePositions.set(c.id, {
-            x: W/2 + Math.cos(ang) * r,
-            y: H/2 + Math.sin(ang) * r
-          });
-        });
-        if(unplaced.length > 0){
-          /* ★ v9.0.3：同一批 unplaced 只警告一次（用簽章比對） */
-          const sig = unplaced.map(c => c.name).sort().join('|');
-          if(window.__lastUnplacedSig !== sig){
-            window.__lastUnplacedSig = sig;
-            console.warn(
-              `[GameMap] ${unplaced.length} 座城池未匹配地圖節點，使用臨時座標：`,
-              unplaced.map(c => c.name)
-            );
-          }
-        }
-      }
       layoutDirty = false;
       return;
     }
 
+    /* ── 無選定地圖：力導向佈局（原邏輯保留）── */
     if(!layoutDirty && nodePositions.size === cities.length) return;
     nodePositions.clear();
     const W = CANVAS_W, H = CANVAS_H, PAD = 200;
