@@ -4038,3 +4038,281 @@ body.map-fullscreen{ overflow:hidden !important; }
 /* ============================================================
    ★ Part B 結束
    ============================================================ */
+   /* ============================================================
+   ★ Part B 結束
+   ============================================================ */
+
+/* ============================================================
+   ★ v9.0.1 新增：地名後綴設定卡
+   ============================================================ */
+.suffix-settings-card{
+  background:linear-gradient(135deg,rgba(68,170,255,.08),rgba(68,170,255,.02));
+  border:1px solid rgba(68,170,255,.35);
+}
+.suffix-settings-card .card-title{ color:var(--neon-blue); }
+
+.suffix-tag-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  padding:10px 12px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  min-height:48px;
+}
+
+.suffix-tag{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:4px 10px 4px 12px;
+  background:rgba(68,170,255,.12);
+  border:1px solid rgba(68,170,255,.4);
+  border-radius:14px;
+  font-size:12px;
+  color:var(--neon-blue);
+  font-weight:600;
+  transition:all .15s;
+}
+.suffix-tag:hover{
+  background:rgba(68,170,255,.2);
+  border-color:var(--neon-blue);
+}
+.suffix-tag .suffix-remove{
+  background:transparent;
+  border:none;
+  color:var(--text-dim);
+  font-size:12px;
+  cursor:pointer;
+  padding:0 2px;
+  font-family:inherit;
+  line-height:1;
+  transition:color .15s;
+}
+.suffix-tag .suffix-remove:hover{
+  color:var(--neon-red);
+}
+.suffix-tag-list .text-dim{
+  align-self:center;
+  font-size:11px;
+  font-style:italic;
+}
+
+/* ============================================================
+   ★ v9.0.1 新增：盟色對照表浮動按鈕
+   ============================================================ */
+.map-alliance-color-btn{
+  position:absolute;
+  top:14px;
+  left:14px;
+  width:44px;
+  height:44px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:linear-gradient(135deg, rgba(30,58,95,.95), rgba(42,74,111,.95));
+  border:2px solid rgba(68,170,255,.5);
+  border-radius:10px;
+  color:#9ed2ff;
+  font-size:22px;
+  cursor:pointer;
+  font-family:inherit;
+  z-index:20;
+  box-shadow:0 4px 16px rgba(0,0,0,.5);
+  transition:all .15s;
+  backdrop-filter:blur(8px);
+}
+.map-alliance-color-btn:hover{
+  background:linear-gradient(135deg, rgba(42,74,111,1), rgba(68,170,255,.35));
+  border-color:var(--neon-blue);
+  color:#fff;
+  transform:scale(1.05);
+}
+.map-alliance-color-btn:active{
+  transform:scale(.95);
+}
+
+/* ============================================================
+   ★ v9.0.1 新增：盟色對照表 Modal
+   ============================================================ */
+.alliance-color-list{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+  max-height:60vh;
+  overflow-y:auto;
+  padding:4px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:#060a10;
+}
+.alliance-color-list::-webkit-scrollbar{ width:6px; }
+.alliance-color-list::-webkit-scrollbar-thumb{
+  background:#2a3a52;
+  border-radius:3px;
+}
+
+.alliance-color-row{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  transition:background .15s;
+}
+.alliance-color-row:hover{
+  background:rgba(68,170,255,.05);
+  border-color:rgba(68,170,255,.3);
+}
+.alliance-color-row.row-self{
+  background:rgba(255,204,0,.04);
+}
+
+.alliance-color-dot{
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  flex:0 0 18px;
+  border:2px solid rgba(255,255,255,.25);
+  box-shadow:0 0 8px currentColor;
+  display:inline-block;
+}
+
+.alliance-color-name{
+  flex:1;
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-primary);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.alliance-color-chip{
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:8px;
+  font-weight:600;
+  flex:0 0 auto;
+}
+.alliance-color-chip.self{ color:var(--neon-blue); background:rgba(68,170,255,.1); border:1px solid rgba(68,170,255,.35); }
+.alliance-color-chip.ally{ color:var(--neon-green); background:rgba(34,255,136,.08); border:1px solid rgba(34,255,136,.3); }
+.alliance-color-chip.enemy{ color:var(--neon-red); background:rgba(255,68,102,.08); border:1px solid rgba(255,68,102,.3); }
+.alliance-color-chip.npc{ color:var(--neon-purple); background:rgba(170,102,255,.1); border:1px solid rgba(170,102,255,.35); }
+
+.alliance-color-hex{
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+  color:var(--text-dim);
+  flex:0 0 auto;
+  padding:2px 6px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:4px;
+}
+
+/* ============================================================
+   ★ v9.0.1 新增：盟色選擇器（盟編輯 Modal 內）
+   ============================================================ */
+.alliance-color-picker{
+  margin-bottom:12px;
+  padding:10px 12px;
+  background:#0a101a;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+}
+.alliance-color-picker > label{
+  font-size:11px;
+  color:var(--text-primary);
+  font-weight:600;
+  display:block;
+  margin-bottom:8px;
+}
+.alliance-color-picker-grid{
+  display:grid;
+  grid-template-columns:repeat(10, 1fr);
+  gap:6px;
+  margin-bottom:10px;
+}
+.alliance-color-picker-dot{
+  width:100%;
+  aspect-ratio:1;
+  border-radius:50%;
+  border:2px solid rgba(255,255,255,.2);
+  cursor:pointer;
+  transition:all .15s;
+  padding:0;
+  font-family:inherit;
+  background:transparent;
+}
+.alliance-color-picker-dot:hover:not(:disabled){
+  transform:scale(1.15);
+  border-color:#fff;
+}
+.alliance-color-picker-dot.selected{
+  border-color:#fff;
+  border-width:3px;
+  box-shadow:0 0 12px currentColor;
+}
+.alliance-color-picker-dot:disabled{
+  opacity:.2;
+  cursor:not-allowed;
+  filter:grayscale(1);
+}
+.alliance-color-picker-dot.locked{
+  opacity:.6;
+  cursor:not-allowed;
+  position:relative;
+}
+.alliance-color-picker-dot.locked::after{
+  content:'🔒';
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:10px;
+}
+.alliance-color-picker-current{
+  font-size:11px;
+  color:var(--text-secondary);
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 10px;
+  background:#060a10;
+  border:1px dashed var(--border);
+  border-radius:var(--radius-sm);
+}
+.alliance-color-picker-current .alliance-color-dot{
+  width:14px;
+  height:14px;
+  flex:0 0 14px;
+}
+
+/* 響應式 */
+@media (max-width:600px){
+  .alliance-color-picker-grid{
+    grid-template-columns:repeat(5, 1fr);
+  }
+  .alliance-color-row{
+    padding:6px 10px;
+    gap:8px;
+  }
+  .alliance-color-name{ font-size:12px; }
+  .alliance-color-hex{ display:none; }
+  .map-alliance-color-btn{
+    width:40px;
+    height:40px;
+    font-size:18px;
+    top:10px;
+    left:10px;
+  }
+}
+
+/* ============================================================
+   ★ v9.0.1 結束
+   ============================================================ */
