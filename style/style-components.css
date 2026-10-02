@@ -1185,3 +1185,139 @@ textarea:disabled{
   .history-item{ flex-direction:column; align-items:flex-start; gap:6px; }
   .history-item .history-time{ min-width:0; }
 }
+/* ============================================================
+   ★ v9.0.2 新增：盟編輯模式切換器
+   ============================================================ */
+.alliance-edit-mode-switch{
+  display:inline-flex;
+  gap:2px;
+  padding:2px;
+  background:rgba(0,0,0,.25);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:14px;
+  flex:0 0 auto;
+}
+.aem-switch-btn{
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:3px 10px;
+  background:transparent;
+  border:none;
+  border-radius:12px;
+  font-size:11px;
+  font-weight:700;
+  cursor:pointer;
+  font-family:inherit;
+  color:var(--text-secondary);
+  white-space:nowrap;
+  transition:all .15s;
+  letter-spacing:.3px;
+}
+.aem-switch-btn:hover{
+  background:rgba(255,255,255,.08);
+  color:var(--text-primary);
+}
+.aem-switch-btn.active{
+  background:rgba(68,170,255,.18);
+  color:var(--neon-blue);
+  box-shadow:0 0 8px rgba(68,170,255,.35);
+}
+.aem-switch-btn[data-edit-mode="inline"].active{
+  background:rgba(255,204,0,.18);
+  color:var(--neon-yellow);
+  box-shadow:0 0 8px rgba(255,204,0,.35);
+}
+
+/* ============================================================
+   ★ v9.0.2 新增：盟編輯 Modal
+   ============================================================ */
+#allianceEditModal .modal-box{
+  max-width:480px;
+}
+#allianceEditModal .form-row > *{
+  min-width:0;
+}
+#allianceEditModal .form-row{
+  gap:8px;
+  margin-bottom:10px;
+}
+#allianceEditModal label{
+  font-size:11px;
+  color:var(--text-secondary);
+  display:block;
+  margin-bottom:3px;
+  font-weight:600;
+}
+#allianceEditModal .section-label{
+  margin:14px 0 8px;
+}
+#allianceEditModal .icon-quick-row{
+  padding:6px 0;
+  max-height:130px;
+  overflow-y:auto;
+  display:flex;
+  flex-wrap:wrap;
+  gap:4px;
+  align-items:center;
+}
+#allianceEditModal .icon-quick-row::-webkit-scrollbar{
+  width:5px;
+}
+#allianceEditModal .icon-quick-row::-webkit-scrollbar-thumb{
+  background:#2a3a52;
+  border-radius:3px;
+}
+#allianceEditModal #aem_iconQuickRow::before{
+  content:'';
+  display:none;
+}
+
+/* 盟徽快速選擇的當前標記 */
+.icon-quick.icon-current{
+  border-color:var(--neon-green);
+  background:rgba(34,255,136,.12);
+  box-shadow:0 0 8px rgba(34,255,136,.35);
+}
+.icon-quick.icon-current::before{
+  content:'✓';
+  position:absolute;
+  top:-4px;
+  left:-4px;
+  background:var(--neon-green);
+  color:#000;
+  font-size:9px;
+  font-weight:700;
+  width:14px;
+  height:14px;
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+/* 盟編輯模式標籤（文字提示） */
+#allianceEditModeLabel{
+  display:inline-block;
+  padding:1px 8px;
+  border-radius:8px;
+  background:rgba(68,170,255,.1);
+  color:var(--neon-blue);
+  font-weight:700;
+  font-family:"SF Mono","Consolas",monospace;
+  font-size:10px;
+}
+
+/* ============================================================
+   ★ v9.0.2：響應式（盟編輯模式切換器）
+   ============================================================ */
+@media (max-width:600px){
+  .alliance-edit-mode-switch{
+    width:100%;
+    justify-content:center;
+  }
+  .aem-switch-btn{
+    flex:1;
+    justify-content:center;
+  }
+}
