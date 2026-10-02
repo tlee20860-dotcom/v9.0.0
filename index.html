@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v9.0.0</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v9.0.2</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-<!-- ★ v9.0.0：樣式分割為 3 檔 -->
-<link rel="stylesheet" href="style/style-base.css">
-<link rel="stylesheet" href="style/style-components.css">
-<link rel="stylesheet" href="style/style-pages.css">
+<!-- ★ v9.0.2：樣式分割為 3 檔 -->
+<link rel="stylesheet" href="style/style-base.css?v=902">
+<link rel="stylesheet" href="style/style-components.css?v=902">
+<link rel="stylesheet" href="style/style-pages.css?v=902">
 </head>
 <body>
 
@@ -38,13 +38,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.0</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.2</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.0</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.2</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -92,9 +92,9 @@
   </div>
 </div>
 
-<!-- ====== 第 6 批 Part A 結束 ====== -->
-<!-- Part B 將從此處接續（app-layout + sidebar + mode-bar） -->
-<!-- ====== 第 6 批 Part B：app-layout + sidebar + mode-bar ====== -->
+<!-- ============================================================
+     app-layout + sidebar + mode-bar
+     ============================================================ -->
 
 <div class="app-layout">
 
@@ -104,7 +104,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v9.0.0</span>
+      <span class="sidebar-version">v9.0.2</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -252,10 +252,6 @@
       </div>
     </div>
 
-<!-- ====== 第 6 批 Part B 結束 ====== -->
-<!-- Part C 將從此處接續（內容頁 + Modal + script 載入） -->
-<!-- ====== 第 6 批 Part C-1：內容頁 ====== -->
-
     <div class="main-container">
 
     <!-- ============================================================
@@ -315,7 +311,7 @@
     </section>
 
     <!-- ============================================================
-         參數設定（不變，完整沿用 v8.9.9）
+         參數設定
          ============================================================ -->
     <section id="tab-params" class="tab-content">
       <div class="card sync-params-card">
@@ -555,10 +551,16 @@
       <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <span>🤝 參戰盟清單</span>
+          <!-- ★ v9.0.2：盟編輯模式切換器 -->
+          <div class="alliance-edit-mode-switch" id="allianceEditModeSwitch">
+            <button class="aem-switch-btn" data-edit-mode="modal" title="使用 Modal 編輯（欄位完整）">🪟 Modal</button>
+            <button class="aem-switch-btn" data-edit-mode="inline" title="表格內快速編輯">✏️ Inline</button>
+          </div>
           <button class="btn btn-ghost btn-sm" id="btnResetAllianceOrder">🔄 重置排序</button>
         </div>
         <div class="text-dim" style="margin-bottom:8px;font-size:10px;">
-          ＊拖曳左側把手 ⠿ 可調整順序（滑鼠 / 觸控皆支援）
+          ＊拖曳左側把手 ⠿ 可調整順序（滑鼠 / 觸控皆支援）<br>
+          ＊編輯模式：<span id="allianceEditModeLabel">🪟 Modal（欄位完整）</span>
         </div>
         <div class="ally-table-wrap">
           <table class="ally-table" id="allianceTable">
@@ -1116,16 +1118,17 @@
                 <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
               </div>
 
-              <button class="map-fullscreen-exit" <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
-  ✖️ 退出全螢幕
-</button>
+              <!-- ★ v9.0.2：修復重複 button（原為 <button class="map-fullscreen-exit" <button ...） -->
+              <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
+                ✖️ 退出全螢幕
+              </button>
 
-<!-- ★ v9.0.1 新增：盟色對照表浮動按鈕 -->
-<button class="map-alliance-color-btn" id="btnAllianceColorList" title="查看盟色對照表">
-  🎨
-</button>
+              <!-- ★ v9.0.1 新增：盟色對照表浮動按鈕 -->
+              <button class="map-alliance-color-btn" id="btnAllianceColorList" title="查看盟色對照表">
+                🎨
+              </button>
 
-<div class="map-float-btns" id="mapFloatBtns">
+              <div class="map-float-btns" id="mapFloatBtns">
                 <button class="map-float-btn" id="btnMapZoomIn" title="放大">＋</button>
                 <button class="map-float-btn" id="btnMapZoomOut" title="縮小">－</button>
                 <button class="map-float-btn" id="btnMapZoomFitBtn" title="適合視窗">⛶</button>
@@ -1435,11 +1438,11 @@
     </section>
 
     <!-- ============================================================
-         戰鬥規則（不變，略縮）
+         戰鬥規則
          ============================================================ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v9.0.0）</div>
+        <div class="card-title">📖 城戰計算規則（v9.0.2）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1450,7 +1453,7 @@
             <b>城（City）</b>：含編號、人數、戰力、隊數。<br>
             <b>地圖路線</b>：兩城之間的接觸（無向圖）。
           </div>
-          <h2>二、v9.0.0 共享沙盤 + 個人沙盤</h2>
+          <h2>二、v9.0.x 共享沙盤 + 個人沙盤</h2>
           <div class="rule-card title">
             <b>共享沙盤</b>：所有登入者自動載入，有權限者可編輯。<br>
             <b>個人沙盤</b>：完全個人化，只有自己能改。<br>
@@ -1463,7 +1466,7 @@
           <div class="rule-card warn">
             <b>資料結構版本（dataVersion）</b>：<br>
             ・v8.x 為 0（無版本欄位）<br>
-            ・v9.0.0 為 1<br>
+            ・v9.0.x 為 1<br>
             <b>自動遷移</b>：讀取舊資料時，自動升級至最新版本。<br>
             <b>失敗保護</b>：遷移失敗不覆蓋本機，跳出警告。
           </div>
@@ -1502,12 +1505,19 @@
             <li><b>管理員</b>：可新增共享沙盤、編輯所有共享沙盤</li>
             <li><b>幹部</b>：可創建房間、執行推演、編輯地圖庫；共享沙盤需額外授權</li>
             <li><b>成員</b>：本機推演、加入房間、檢視共享沙盤</li>
-            <li><b>v9.0.0：地圖庫</b>：所有登入使用者皆可編輯</li>
+            <li><b>v9.0.x：地圖庫</b>：所有登入使用者皆可編輯</li>
           </ul>
           <h2>十一、安全架構</h2>
           <div class="rule-card warn">
             <b>智譜 API Key 儲存於 Cloudflare Pages Functions 環境變數</b>，前端完全接觸不到 Key。<br>
             所有 AI 請求經過 <code>/api/ocr</code> 代理。
+          </div>
+          <h2>十二、v9.0.2 盟編輯模式</h2>
+          <div class="rule-card title">
+            <b>🪟 Modal 模式</b>：欄位完整，含盟色選擇器。<br>
+            <b>✏️ Inline 模式</b>：表格內快速編輯（輕量）。<br>
+            <b>切換位置</b>：盟清單卡 card-title 右側。<br>
+            <b>記憶</b>：使用者的偏好會儲存在 localStorage。
           </div>
         </div>
       </div>
@@ -1517,9 +1527,9 @@
   </main>
 </div>  <!-- /.app-layout -->
 
-<!-- ====== 第 6 批 Part C-1 結束 ====== -->
-<!-- Part C-2 將從此處接續（所有 Modal） -->
-<!-- ====== 第 6 批 Part C-2：所有 Modal ====== -->
+<!-- ============================================================
+     所有 Modal
+     ============================================================ -->
 
 <!-- ============================================================
      ★ v9.0.0：新增共享沙盤 Modal
@@ -2106,7 +2116,72 @@
 </div>
 
 <!-- ============================================================
-     ★ v9.0.0：帳號編輯 Modal（含共享沙盤權限）
+     ★ v9.0.2：盟編輯 Modal（新增）
+     ============================================================ -->
+<div class="modal-overlay" id="allianceEditModal">
+  <div class="modal-box modal-lg" style="max-width:480px;">
+    <h3 id="allianceEditTitle">✏️ 編輯同盟</h3>
+    <div class="modal-scroll">
+      <div class="form-row">
+        <div style="flex:0 0 80px;">
+          <label>盟徽</label>
+          <input type="text" id="aem_icon" placeholder="⚔️" maxlength="8" style="text-align:center;font-size:20px;">
+        </div>
+        <div style="flex:2;">
+          <label>盟名稱 <span style="color:var(--neon-red);">*</span></label>
+          <input type="text" id="aem_name" placeholder="同盟名稱" maxlength="20">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label>陣營</label>
+          <select id="aem_side">
+            <option value="self">本方（唯一）</option>
+            <option value="ally">同盟</option>
+            <option value="enemy">敵方</option>
+            <option value="common_enemy">共同敵方</option>
+            <option value="npc">NPC</option>
+          </select>
+        </div>
+        <div>
+          <label>總人數</label>
+          <input type="number" id="aem_memberCount" value="100" min="1">
+        </div>
+        <div>
+          <label>總戰力</label>
+          <div class="input-with-unit">
+            <input type="number" id="aem_totalPower" value="2" step="0.01" min="0">
+            <span class="unit">億</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label>平均戰力（自動）</label>
+          <input type="text" id="aem_avgPower" readonly value="—">
+        </div>
+      </div>
+
+      <!-- ★ 盟色選擇器容器 -->
+      <div id="aem_colorPickerContainer"></div>
+
+      <div class="section-label">⚙️ 快速選擇盟徽</div>
+      <div class="icon-quick-row" id="aem_iconQuickRow"></div>
+
+      <div class="text-dim mt-8" id="aem_hint"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="aem_cancel">取消</button>
+      <button class="btn btn-danger" id="aem_delete" style="margin-right:auto;">🗑️ 刪除</button>
+      <button class="btn btn-primary" id="aem_save">💾 儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     ★ v9.0.0：帳號編輯 Modal
      ============================================================ -->
 <div class="modal-overlay" id="accountEditModal">
   <div class="modal-box modal-lg">
@@ -2137,7 +2212,6 @@
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canKick"><span>可踢人</span></label>
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditSettings"><span>可修改戰鬥參數</span></label>
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditMapLibrary"><span>可編輯地圖庫</span></label>
-        <!-- ★ v9.0.0 -->
         <label class="ae-perm-item"><input type="checkbox" id="ae_perm_canEditSharedSandbox"><span>可編輯共享沙盤</span></label>
       </div>
 
@@ -2153,11 +2227,8 @@
   </div>
 </div>
 
-<!-- ====== 第 6 批 Part C-2 結束 ====== -->
-<!-- Part C-3 將從此處接續（script 載入） -->
-
 <!-- ============================================================
-     ★ v9.0.1 新增：盟色對照表 Modal
+     ★ v9.0.1：盟色對照表 Modal
      ============================================================ -->
 <div class="modal-overlay" id="allianceColorModal">
   <div class="modal-box modal-lg" style="max-width:520px;">
@@ -2176,15 +2247,12 @@
 </div>
 
 <!-- ============================================================
-     ★ v9.0.1 新增：盟顏色選擇器（在盟編輯 Modal 內用）
-     說明：此區塊不直接顯示，由 JS 動態插入到盟編輯 Modal 內
+     ★ v9.0.1：盟顏色選擇器模板
      ============================================================ -->
 <template id="allianceColorPickerTemplate">
   <div class="alliance-color-picker" id="allianceColorPicker">
     <label>🎨 盟專屬色</label>
-    <div class="alliance-color-picker-grid" id="allianceColorPickerGrid">
-      <!-- 動態填入 20 色圓點 -->
-    </div>
+    <div class="alliance-color-picker-grid" id="allianceColorPickerGrid"></div>
     <div class="alliance-color-picker-current">
       目前：<span class="alliance-color-dot" id="allianceColorCurrentDot"></span>
       <span id="allianceColorCurrentText">#3b82f6</span>
@@ -2194,7 +2262,7 @@
 </template>
 
 <!-- ============================================================
-     核心載入順序（順序關鍵，不可調換）
+     核心載入順序（v9.0.2）
      ============================================================ -->
 
 <!-- ① 外部模組（無依賴） -->
@@ -2223,7 +2291,7 @@
 <!-- ⑧ 資料匯入匯出（依賴 core + firebase） -->
 <script src="js/data.js"></script>
 
-<!-- ⑨ UI 模組（★ v9.0.0：分割成 6 個檔案，依序載入） -->
+<!-- ⑨ UI 模組（依序載入） -->
 <script src="js/ui/ui-core.js"></script>
 <script src="js/ui/ui-dyn-deploy.js"></script>
 <script src="js/ui/ui-city.js"></script>
