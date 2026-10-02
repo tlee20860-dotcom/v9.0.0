@@ -4309,7 +4309,99 @@ body.map-fullscreen{ overflow:hidden !important; }
     left:10px;
   }
 }
+/* ============================================================
+   ★ v9.0.4 新增：城池定位狀態徽章
+   ============================================================ */
+.loc-badge{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:2px 8px;
+  border-radius:10px;
+  font-size:10px;
+  font-weight:700;
+  font-family:"SF Mono","Consolas",monospace;
+  white-space:nowrap;
+  cursor:help;
+  transition:all .15s;
+  max-width:180px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  line-height:1.4;
+}
+.loc-badge:hover{
+  transform:scale(1.05);
+}
+
+/* ✅ 已定位且同步 */
+.loc-badge.loc-synced{
+  color:var(--neon-green);
+  background:rgba(34,255,136,.1);
+  border:1px solid rgba(34,255,136,.4);
+}
+
+/* ⚠️ 部分同步（只有一邊有） */
+.loc-badge.loc-mismatch{
+  color:var(--neon-yellow);
+  background:rgba(255,204,0,.1);
+  border:1px solid rgba(255,204,0,.4);
+}
+
+/* 🔀 跨圖（定位在其他地圖） */
+.loc-badge.loc-crossmap{
+  color:var(--neon-purple);
+  background:rgba(170,102,255,.1);
+  border:1px solid rgba(170,102,255,.4);
+}
+
+/* ❌ 未定位 */
+.loc-badge.loc-unlocated{
+  color:var(--neon-red);
+  background:rgba(255,68,102,.08);
+  border:1px solid rgba(255,68,102,.3);
+}
+
+/* 表格欄位（定位 cell） */
+.city-loc-cell{
+  font-size:10px;
+  white-space:nowrap;
+  padding:6px 8px;
+  text-align:left;
+}
+
+/* 行內編輯時的定位 cell（唯讀顯示） */
+.city-table tr.inline-editing .city-loc-cell{
+  background:rgba(255,204,0,.04);
+}
+
+/* 卡片內定位徽章（微調大小） */
+.city-card .loc-badge{
+  font-size:10px;
+  padding:2px 8px;
+}
 
 /* ============================================================
-   ★ v9.0.1 結束
+   ★ v9.0.4：響應式
    ============================================================ */
+@media (max-width:768px){
+  .loc-badge{
+    font-size:9px;
+    padding:1px 6px;
+    max-width:140px;
+  }
+  .city-loc-cell{
+    padding:4px 6px;
+  }
+}
+@media (max-width:480px){
+  .loc-badge{
+    font-size:9px;
+    max-width:110px;
+  }
+  /* 手機版表格太窄 → 定位欄位縮到只顯示圖示 */
+  .city-table .city-loc-cell .loc-badge{
+    padding:2px 4px;
+    max-width:36px;
+    overflow:hidden;
+  }
+}
