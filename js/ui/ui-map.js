@@ -972,37 +972,52 @@ const GameMap = (() => {
     }
 
     if(e.touches.length === 0){
-      if(nodeDragging){
-        const wasMoved = nodeDragging.moved;
-        const dragCityId = nodeDragging.cityId;
-        const state = getState();
-        const city = state.cities.find(c => c.id === dragCityId);
-        const p = nodePositions.get(dragCityId);
+if(nodeDragging){
+  const wasMoved = nodeDragging.moved;
+  const dragCityId = nodeDragging.cityId;
+  const state = getState();
+  const city = state.cities.find(c => c.id === dragCityId);
+  const p = nodePositions.get(dragCityId);
 
-        if(city && p && wasMoved){
-          const newX = Math.round(p.x);
-          const newY = Math.round(p.y);
+  /* ★ v9.1.3：手機「點擊城池」（未拖曳、未長按）→ 觸發模式點擊
+     修復：原本手機版點城池完全沒反應，因為這段被 return 吞掉了 */
+  if(!wasMoved && !longPressTriggered && mapMode !== 'none' && city){
+    const t = e.changedTouches[0];
+    nodeDragging = null;
+    modeTouchStart = null;
+    touchPanStart = null;
+    longPressStart = null;
+    longPressTriggered = false;
+    if(t) handleModeTap(t.clientX, t.clientY);
+    applyCursor();
+    render();
+    return;
+  }
 
-          /* ★ v9.0.3：同步到地圖庫 nodes + city.mapNode + Firebase */
-          const mapId = city.mapNode?.mapId || getState().mapLibrary.activeMapId || '';
-          if(window.SLG.DataSyncManager){
-            window.SLG.DataSyncManager.setNode(city.id, newX, newY, {
-              source: 'manual',
-              mapId,
-            });
-          }
-          logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
-        }
+  if(city && p && wasMoved){
+    const newX = Math.round(p.x);
+    const newY = Math.round(p.y);
 
-        nodeDragging = null;
-        modeTouchStart = null;
-        touchPanStart = null;
-        longPressStart = null;
-        applyCursor();
-        render();
-        return;
-      }
+    /* ★ v9.0.3：同步到地圖庫 nodes + city.mapNode + Firebase */
+    const mapId = city.mapNode?.mapId || getState().mapLibrary.activeMapId || '';
+    if(window.SLG.DataSyncManager){
+      window.SLG.DataSyncManager.setNode(city.id, newX, newY, {
+        source: 'manual',
+        mapId,
+      });
+    }
+    logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
+  }
 
+  nodeDragging = null;
+  modeTouchStart = null;
+  touchPanStart = null;
+  longPressStart = null;
+  longPressTriggered = false;
+  applyCursor();
+  render();
+  return;
+}
       if(mapMode !== 'none' && modeTouchStart){
         if(!modeTouchStart.moved){
           const t = e.changedTouches[0];
