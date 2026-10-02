@@ -1,6 +1,6 @@
 /* ============================================================================
  * core.js — 全域狀態、事件匯流排、工具、持久化、模式管理、AI、網路監控、同步
- * v9.0.0：新增共享沙盤狀態 + 事件 + 沙盤模式切換
+ * v9.0.1：新增地名後綴管理 + 盟色分配邏輯（20 色池、永久穩定）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -21,8 +21,9 @@ const AI_LS_KEY = 'slg_ai_params';
 const SYNC_PREFS_KEY = 'slg_sync_prefs';
 const TROOP_TIERS_LS_KEY = 'slg_troop_tiers';
 const ACCOUNT_UID_KEY = 'slg_sandtable_v82_accountUid';
-const SANDBOX_MODE_LS_KEY = 'slg_sandbox_mode_v900';      /* ★ v9.0.0 */
-const ACTIVE_SHARED_LS_KEY = 'slg_active_shared_v900';    /* ★ v9.0.0 */
+const SANDBOX_MODE_LS_KEY = 'slg_sandbox_mode_v900';
+const ACTIVE_SHARED_LS_KEY = 'slg_active_shared_v900';
+const CITY_SUFFIXES_LS_KEY = 'slg_city_suffixes';              /* ★ v9.0.1 新增 */
 const HOST_TIMEOUT = 15000;
 const EDIT_LOCK_TTL = 30000;
 
@@ -46,6 +47,42 @@ const DEFAULT_TROOP_TIERS = {
   ],
   autoCalcOnImport: true,
   preserveOldTotal: false,
+};
+
+/* ★ v9.0.1 新增：預設地名後綴（8 個） */
+const DEFAULT_CITY_SUFFIXES = [
+  '水寨', '醫館', '軍機處', '關隘', '碼頭', '港', '鎮', '島'
+];
+
+/* ★ v9.0.1 新增：盟色池（20 色，不重複明顯分明） */
+const ALLIANCE_COLOR_PALETTE = [
+  '#3b82f6',  // 1  藍（本方優先）
+  '#10b981',  // 2  綠（同盟優先）
+  '#ef4444',  // 3  紅（敵方優先）
+  '#f59e0b',  // 4  橙
+  '#a855f7',  // 5  紫
+  '#ec4899',  // 6  粉
+  '#f97316',  // 7  橘
+  '#14b8a6',  // 8  青
+  '#84cc16',  // 9  黃綠
+  '#e11d48',  // 10 深紅
+  '#8b5cf6',  // 11 藍紫
+  '#06b6d4',  // 12 天藍
+  '#facc15',  // 13 黃
+  '#f43f5e',  // 14 玫紅
+  '#0ea5e9',  // 15 天空藍
+  '#22c55e',  // 16 亮綠
+  '#eab308',  // 17 芥末黃
+  '#d946ef',  // 18 洋紅
+  '#6366f1',  // 19 靛藍
+  '#64748b',  // 20 灰（NPC 優先）
+];
+
+/* ★ v9.0.1 新增：陣營優先色（本方 / 同盟 / NPC 鎖定） */
+const SIDE_PRIORITY_COLOR = {
+  self: '#3b82f6',  // 本方 → 藍
+  ally: '#10b981',  // 同盟 → 綠
+  npc:  '#64748b',  // NPC → 灰
 };
 
 const DEFAULT_ALLIANCE_ICONS = [
@@ -92,9 +129,11 @@ const EVT = {
   NETWORK:'network', SYNC_STATE:'sync:state', TROOP_TIERS:'troop:tiers',
   MAP_LIBRARY_UPDATED:'map:library',
   MAP_MATCH_RESULT:'map:match',
-  /* ★ v9.0.0：共享沙盤事件 */
-  SHARED_SANDBOXES_UPDATED:'shared:index',      /* 共享沙盤清單變更 */
-  SANDBOX_MODE_CHANGED:'sandbox:mode',          /* 沙盤模式切換 */
+  SHARED_SANDBOXES_UPDATED:'shared:index',
+  SANDBOX_MODE_CHANGED:'sandbox:mode',
+  /* ★ v9.0.1 新增 */
+  CITY_SUFFIXES_CHANGED:'city:suffixes',
+  ALLIANCE_COLOR_CHANGED:'alliance:color',
 };
 
 /* ============================================================
@@ -257,6 +296,204 @@ function saveTroopTiers(){
 }
 
 /* ============================================================
+   ★ v9.0.1 新增：地名後綴管理
+   ============================================================ */
+function loadCitySuffixes(){
+  try{
+    const raw = localStorage.getItem(CITY_SUFFIXES_LS_KEY);
+    if(!raw){
+      state.citySuffixes = DEFAULT_CITY_SUFFIXES.slice();
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    if(Array.isArray(parsed) && parsed.length > 0){
+      state.citySuffixes = parsed.filter(s => typeof s === 'string' && s.trim());
+    } else {
+      state.citySuffixes = DEFAULT_CITY_SUFFIXES.slice();
+    }
+  }catch(e){
+    console.warn('載入地名後綴失敗', e);
+    state.citySuffixes = DEFAULT_CITY_SUFFIXES.slice();
+  }
+}
+
+function saveCitySuffixes(){
+  try{
+    localStorage.setItem(CITY_SUFFIXES_LS_KEY, JSON.stringify(state.citySuffixes));
+  }catch(e){ console.warn('儲存地名後綴失敗', e); }
+}
+
+function getCitySuffixes(){
+  return (state.citySuffixes || []).slice();
+}
+
+function setCitySuffixes(list){
+  if(!Array.isArray(list)) return;
+  const cleaned = list
+    .map(s => String(s || '').trim())
+    .filter(s => s.length > 0 && s.length <= 10);
+  /* 去重 */
+  const unique = [...new Set(cleaned)];
+  state.citySuffixes = unique;
+  saveCitySuffixes();
+  emit(EVT.CITY_SUFFIXES_CHANGED, unique);
+  logSystem(`🏷️ 地名後綴已更新（共 ${unique.length} 個）`);
+}
+
+function addCitySuffix(suffix){
+  const trimmed = String(suffix || '').trim();
+  if(!trimmed) return { ok: false, msg: '請輸入後綴' };
+  if(trimmed.length > 10) return { ok: false, msg: '後綴最多 10 字' };
+  if(state.citySuffixes.includes(trimmed)) return { ok: false, msg: '此後綴已存在' };
+  state.citySuffixes.push(trimmed);
+  saveCitySuffixes();
+  emit(EVT.CITY_SUFFIXES_CHANGED, state.citySuffixes.slice());
+  logSystem(`🏷️ 已新增後綴：${trimmed}`);
+  return { ok: true };
+}
+
+function removeCitySuffix(suffix){
+  const idx = state.citySuffixes.indexOf(suffix);
+  if(idx < 0) return { ok: false, msg: '找不到此後綴' };
+  state.citySuffixes.splice(idx, 1);
+  saveCitySuffixes();
+  emit(EVT.CITY_SUFFIXES_CHANGED, state.citySuffixes.slice());
+  logSystem(`🗑️ 已刪除後綴：${suffix}`);
+  return { ok: true };
+}
+
+function resetCitySuffixes(){
+  state.citySuffixes = DEFAULT_CITY_SUFFIXES.slice();
+  saveCitySuffixes();
+  emit(EVT.CITY_SUFFIXES_CHANGED, state.citySuffixes.slice());
+  logSystem(`🔄 地名後綴已恢復預設（${state.citySuffixes.length} 個）`);
+}
+
+/* ============================================================
+   ★ v9.0.1 新增：盟色分配邏輯
+   ============================================================ */
+
+/**
+ * 取得盟專屬顏色（永久穩定）
+ * 1. 若 alliance.color 已有值 → 直接回傳（永久不變）
+ * 2. 依陣營決定優先色（本方/同盟/NPC 鎖定）
+ * 3. 敵方 / 共同敵方 → 從 20 色池取未使用
+ * 4. 色池用光 → 循環 + 警告
+ */
+function getAllianceColor(alliance){
+  if(!alliance) return SIDE_PRIORITY_COLOR.npc;
+
+  /* ① 已有 color → 直接回傳 */
+  if(alliance.color && /^#[0-9a-fA-F]{6}$/.test(alliance.color)){
+    return alliance.color;
+  }
+
+  /* ② 陣營優先色 */
+  const priority = SIDE_PRIORITY_COLOR[alliance.side];
+  if(priority){
+    const usedByOthers = new Set(
+      state.alliances
+        .filter(a => a.id !== alliance.id && a.color)
+        .map(a => a.color)
+    );
+    if(!usedByOthers.has(priority)){
+      return priority;
+    }
+  }
+
+  /* ③ 從色池取未使用 */
+  const usedColors = new Set(
+    state.alliances
+      .filter(a => a.id !== alliance.id && a.color)
+      .map(a => a.color)
+  );
+  for(const color of ALLIANCE_COLOR_PALETTE){
+    if(!usedColors.has(color)) return color;
+  }
+
+  /* ④ 循環（色池用光） */
+  console.warn('[盟色] 20 色池已用光，開始循環使用');
+  const myIdx = state.alliances.findIndex(a => a.id === alliance.id);
+  return ALLIANCE_COLOR_PALETTE[
+    (myIdx < 0 ? 0 : myIdx) % ALLIANCE_COLOR_PALETTE.length
+  ];
+}
+
+/**
+ * 重建盟色快取（allianceId → color）
+ * 在盟清單變動後呼叫
+ */
+function rebuildAllianceColorMap(){
+  const map = new Map();
+  for(const a of state.alliances){
+    /* 若無 color → 分配並寫回 */
+    if(!a.color || !/^#[0-9a-fA-F]{6}$/.test(a.color)){
+      a.color = getAllianceColor(a);
+      if(window.SLG.markDirty) window.SLG.markDirty('alliance', a.id);
+    }
+    map.set(a.id, a.color);
+  }
+  state.allianceColorMap = map;
+  return map;
+}
+
+/**
+ * 取得盟色快取（無則重建）
+ */
+function getAllianceColorMap(){
+  if(!state.allianceColorMap || state.allianceColorMap.size === 0){
+    rebuildAllianceColorMap();
+  }
+  return state.allianceColorMap;
+}
+
+/**
+ * 手動設定盟色（盟編輯 Modal 用）
+ * @param {string} allianceId
+ * @param {string} newColor
+ * @returns {ok: boolean, msg?: string}
+ */
+function setAllianceColor(allianceId, newColor){
+  if(!/^#[0-9a-fA-F]{6}$/.test(newColor)){
+    return { ok: false, msg: '顏色格式錯誤' };
+  }
+  const alliance = state.alliances.find(a => a.id === allianceId);
+  if(!alliance) return { ok: false, msg: '找不到盟' };
+
+  /* 本方/同盟/NPC 鎖定 */
+  const priority = SIDE_PRIORITY_COLOR[alliance.side];
+  if(priority && newColor !== priority){
+    return { ok: false, msg: `${allianceSideLabel(alliance.side)}固定為 ${priority}，不可修改` };
+  }
+
+  /* 檢查衝突 */
+  const conflict = state.alliances.find(a => a.id !== allianceId && a.color === newColor);
+  if(conflict){
+    return { ok: false, msg: `此顏色已被「${conflict.name}」使用` };
+  }
+
+  alliance.color = newColor;
+  state.entityRev.alliance[allianceId] = (state.entityRev.alliance[allianceId] || 0) + 1;
+  if(window.SLG.markDirty) window.SLG.markDirty('alliance', allianceId);
+  rebuildAllianceColorMap();
+  emit(EVT.ALLIANCE_COLOR_CHANGED, { allianceId, color: newColor });
+  logSystem(`🎨 盟「${alliance.name}」顏色已更新為 ${newColor}`);
+  return { ok: true };
+}
+
+/**
+ * 取得「未使用」的顏色清單（給盟編輯 Modal 用）
+ */
+function getAvailableAllianceColors(excludeAllianceId){
+  const usedColors = new Set(
+    state.alliances
+      .filter(a => a.id !== excludeAllianceId && a.color)
+      .map(a => a.color)
+  );
+  return ALLIANCE_COLOR_PALETTE.filter(c => !usedColors.has(c));
+}
+
+/* ============================================================
    AI 佈兵助手
    ============================================================ */
 const AI = (() => {
@@ -352,9 +589,6 @@ const AI = (() => {
   };
 })();
 
-/* ====== 第 3 批 Part A 結束 ====== */
-/* Part B 將從此處接續（state + 事件匯流排 + 網路監控） */
-/* ====== 第 3 批 Part B：state + 事件匯流排 + 網路監控 ====== */
 /* ============================================================
    state
    ============================================================ */
@@ -366,7 +600,6 @@ const state = {
     extraPerms: {
       canEditData: false, canImportExcel: false, canRunSim: false,
       canKick: false, canEditSettings: false, canEditMapLibrary: false,
-      /* ★ v9.0.0：共享沙盤編輯權限 */
       canEditSharedSandbox: false,
     },
   },
@@ -433,12 +666,14 @@ const state = {
     candidatesThreshold: 0.5,
     maxCandidates: 5,
   },
-  /* ★ v9.0.0：共享沙盤狀態 */
-  sandboxMode: 'personal',           /* 'personal' | 'shared' */
-  activeSharedSandboxId: '',         /* 當前共享沙盤 ID */
-  activeSharedSandboxName: '',       /* 當前共享沙盤名稱 */
-  sharedSandboxesIndex: {},          /* 共享沙盤清單 { sandboxId: { name, ... } } */
-  sharedSandboxVersion: 0,           /* 當前共享沙盤版本號 */
+  sandboxMode: 'personal',
+  activeSharedSandboxId: '',
+  activeSharedSandboxName: '',
+  sharedSandboxesIndex: {},
+  sharedSandboxVersion: 0,
+  /* ★ v9.0.1 新增 */
+  citySuffixes: DEFAULT_CITY_SUFFIXES.slice(),
+  allianceColorMap: new Map(),
 };
 
 /* ============================================================
@@ -495,12 +730,8 @@ function initNetworkWatcher(){
   }, NETWORK_HEARTBEAT_INTERVAL);
 }
 
-/* ====== 第 3 批 Part B 結束 ====== */
-/* Part C 將從此處接續（雲端同步 + 持久化 + 快照 + 地圖關聯工具 + 模式 + 暴露） */
-/* ====== 第 3 批 Part C：同步 + 持久化 + 快照 + 地圖工具 + 暴露 ====== */
-
 /* ============================================================
-   雲端同步管理（含 Promise 上傳鎖）
+   雲端同步管理
    ============================================================ */
 let cloudSyncFn = null;
 let cloudSyncTimer = null;
@@ -715,13 +946,11 @@ function saveState(reason){
         candidatesThreshold: state.mapMatching.candidatesThreshold,
         maxCandidates: state.mapMatching.maxCandidates,
       },
-      /* ★ v9.0.0：沙盤模式 */
       sandboxMode: state.sandboxMode,
       activeSharedSandboxId: state.activeSharedSandboxId,
       activeSharedSandboxName: state.activeSharedSandboxName,
       sharedSandboxVersion: state.sharedSandboxVersion,
     }));
-    /* 沙盤模式另外存（跨會話保留） */
     try{
       localStorage.setItem(SANDBOX_MODE_LS_KEY, state.sandboxMode || 'personal');
       localStorage.setItem(ACTIVE_SHARED_LS_KEY, JSON.stringify({
@@ -776,7 +1005,22 @@ function migrateAllianceOrder(){
   sorted.forEach((a, i) => { a.order = i; });
 }
 
-/* ★ v9.0.0：載入沙盤模式偏好 */
+/* 盟色遷移：舊盟若無 color 欄位 → 分配 */
+function migrateAllianceColors(){
+  if(!Array.isArray(state.alliances)) return;
+  let changed = false;
+  for(const a of state.alliances){
+    if(!a.color || !/^#[0-9a-fA-F]{6}$/.test(a.color)){
+      a.color = getAllianceColor(a);
+      changed = true;
+    }
+  }
+  if(changed){
+    rebuildAllianceColorMap();
+    logSystem('🎨 已為舊盟分配顏色');
+  }
+}
+
 function loadSandboxModePref(){
   try{
     const mode = localStorage.getItem(SANDBOX_MODE_LS_KEY);
@@ -797,6 +1041,7 @@ function loadState(){
   try{
     migrateLegacyState();
     loadSandboxModePref();
+    loadCitySuffixes();                     /* ★ v9.0.1 新增 */
     const raw = localStorage.getItem(LS_PREFIX+'state');
     if(!raw) return;
     const d = JSON.parse(raw);
@@ -837,6 +1082,7 @@ function loadState(){
         if(!['self','ally','enemy'].includes(a.side)) a.side = 'ally';
         if(typeof a.icon !== 'string') a.icon = '';
         if(typeof a.order !== 'number') a.order = null;
+        /* color 保留（若無由 migrateAllianceColors 補） */
         return a;
       });
     }
@@ -887,7 +1133,6 @@ function loadState(){
       if(typeof d.mapMatching.maxCandidates === 'number') state.mapMatching.maxCandidates = d.mapMatching.maxCandidates;
     }
 
-    /* ★ v9.0.0：沙盤模式從 d 讀取（優先於 LS） */
     if(d.sandboxMode === 'shared' || d.sandboxMode === 'personal'){
       state.sandboxMode = d.sandboxMode;
     }
@@ -903,6 +1148,7 @@ function loadState(){
 
     migratePowerInState();
     migrateAllianceOrder();
+    migrateAllianceColors();                /* ★ v9.0.1 新增 */
     if(typeof window.SLG.migrateZonesForMap === 'function'){
       try{ window.SLG.migrateZonesForMap(); }catch(e){ console.warn('遷移 zone.mapId 失敗', e); }
     }
@@ -960,8 +1206,22 @@ function upsertEntity(kind, entity, opts){
   const coll = kind==='alliance' ? state.alliances
              : kind==='zone'     ? state.zones : state.cities;
   const idx = coll.findIndex(x => x.id === entity.id);
+
+  /* ★ v9.0.1：新增盟時自動分配顏色 */
+  if(kind === 'alliance'){
+    if(!entity.color || !/^#[0-9a-fA-F]{6}$/.test(entity.color)){
+      entity.color = getAllianceColor(entity);
+    }
+  }
+
   state.entityRev[kind][entity.id] = (state.entityRev[kind][entity.id] || 0) + 1;
   if(idx>=0) coll[idx] = entity; else coll.push(entity);
+
+  /* ★ v9.0.1：盟變動 → 重建顏色快取 */
+  if(kind === 'alliance'){
+    rebuildAllianceColorMap();
+  }
+
   if(!silent){ markDirty(kind, entity.id); tickLamport(); flushPatches(); }
   return entity;
 }
@@ -974,6 +1234,12 @@ function deleteEntity(kind, id, opts){
   if(idx<0) return;
   coll.splice(idx,1);
   state.entityRev[kind][id] = (state.entityRev[kind][id] || 0) + 1;
+
+  /* ★ v9.0.1：刪除盟 → 重建顏色快取 */
+  if(kind === 'alliance'){
+    rebuildAllianceColorMap();
+  }
+
   if(!silent){ markDirty(kind+'Deleted', id); tickLamport(); flushPatches(); }
 }
 function updateSettings(patch, opts){
@@ -1003,11 +1269,14 @@ function applyPatch(patch){
   if(!isNewer(rev, localRev)) return false;
   const idx = coll.findIndex(x => x.id === id);
 
-  if(op==='delete'){ if(idx>=0) coll.splice(idx,1); state.entityRev[kind][id] = rev; return true; }
+  if(op==='delete'){ if(idx>=0) coll.splice(idx,1); state.entityRev[kind][id] = rev; 
+    if(kind === 'alliance') rebuildAllianceColorMap();
+    return true; }
   if(op==='upsert'){
     if(idx>=0) coll[idx] = Object.assign({}, coll[idx], data);
     else coll.push(data);
     state.entityRev[kind][id] = rev;
+    if(kind === 'alliance') rebuildAllianceColorMap();
     return true;
   }
   return false;
@@ -1082,6 +1351,7 @@ function applyFullSnapshot(snap){
   if(typeof state.settings.warRequireSameMap !== 'boolean') state.settings.warRequireSameMap = true;
   migratePowerInState();
   migrateAllianceOrder();
+  migrateAllianceColors();                  /* ★ v9.0.1 新增 */
   if(typeof window.SLG.migrateZonesForMap === 'function'){
     try{ window.SLG.migrateZonesForMap(); }catch(e){}
   }
@@ -1131,6 +1401,7 @@ function applySandboxData(data){
   }
   migratePowerInState();
   migrateAllianceOrder();
+  migrateAllianceColors();                  /* ★ v9.0.1 新增 */
   if(typeof window.SLG.migrateZonesForMap === 'function'){
     try{ window.SLG.migrateZonesForMap(); }catch(e){}
   }
@@ -1159,8 +1430,10 @@ function ensureNpcAlliance(){
   npc = {
     id: uid(), name: NPC_ALLIANCE_NAME, icon: NPC_ALLIANCE_ICON, side: 'enemy',
     memberCount: 0, totalPower: 0, avgPower: 0, power: 0, order: 9999,
+    color: SIDE_PRIORITY_COLOR.npc,        /* ★ v9.0.1 */
   };
   state.alliances.push(npc);
+  rebuildAllianceColorMap();               /* ★ v9.0.1 */
   logSystem('已建立預設 NPC 盟');
   return npc;
 }
@@ -1592,6 +1865,7 @@ function readTroopTiersFromUI(){
 /* 初始化 */
 loadSyncPrefs();
 loadTroopTiers();
+loadCitySuffixes();                         /* ★ v9.0.1 新增 */
 
 /* ============================================================
    地圖庫工具
@@ -1772,7 +2046,7 @@ function loadMapLibraryPrefs(){
     const p = JSON.parse(raw);
     if(typeof p.activeMapId === 'string') state.mapLibrary.activeMapId = p.activeMapId;
     if(p.viewMode === 'gallery' || p.viewMode === 'single') state.mapLibrary.viewMode = p.viewMode;
-  }catch(e){ /* ignore */ }
+  }catch(e){}
 }
 function saveMapLibraryPrefs(){
   try{
@@ -1780,7 +2054,7 @@ function saveMapLibraryPrefs(){
       activeMapId: state.mapLibrary.activeMapId,
       viewMode: state.mapLibrary.viewMode,
     }));
-  }catch(e){ /* ignore */ }
+  }catch(e){}
 }
 
 function getMapMeta(mapId){
@@ -1819,8 +2093,8 @@ initMapLibrary();
    ============================================================ */
 Object.assign(window.SLG, {
   LS_PREFIX, LS_LEGACY_PREFIX, AI_LS_KEY, ACCOUNT_UID_KEY,
-  SYNC_PREFS_KEY, TROOP_TIERS_LS_KEY,
-  SANDBOX_MODE_LS_KEY, ACTIVE_SHARED_LS_KEY,      /* ★ v9.0.0 */
+  SYNC_PREFS_KEY, TROOP_TIERS_LS_KEY, CITY_SUFFIXES_LS_KEY,
+  SANDBOX_MODE_LS_KEY, ACTIVE_SHARED_LS_KEY,
   HOST_TIMEOUT, EDIT_LOCK_TTL,
   SANDBOX_SYNC_DEBOUNCE, ROOM_SNAPSHOT_DEBOUNCE,
   NETWORK_HEARTBEAT_INTERVAL,
@@ -1831,6 +2105,9 @@ Object.assign(window.SLG, {
 
   POWER_YI, POWER_WAN, POWER_MIGRATE_THRESHOLD,
   DEFAULT_ALLIANCE_ICONS, DEFAULT_TROOP_TIERS,
+  DEFAULT_CITY_SUFFIXES,                    /* ★ v9.0.1 */
+  ALLIANCE_COLOR_PALETTE,                   /* ★ v9.0.1 */
+  SIDE_PRIORITY_COLOR,                      /* ★ v9.0.1 */
 
   uid, nowTime, esc, sideLabel, allianceSideLabel, sideClass, logSystem,
   formatDateCompact, timeAgo, buildSandboxFileName,
@@ -1841,6 +2118,15 @@ Object.assign(window.SLG, {
   calcTeamsFromTiers, getTroopTiers, setTroopTiers, resetTroopTiers,
   loadTroopTiers, saveTroopTiers,
   syncTroopTiersToUI, readTroopTiersFromUI,
+
+  /* ★ v9.0.1 新增：地名後綴 */
+  loadCitySuffixes, saveCitySuffixes,
+  getCitySuffixes, setCitySuffixes,
+  addCitySuffix, removeCitySuffix, resetCitySuffixes,
+
+  /* ★ v9.0.1 新增：盟色 */
+  getAllianceColor, rebuildAllianceColorMap, getAllianceColorMap,
+  setAllianceColor, getAvailableAllianceColors,
 
   AI,
   state, on, emit,
@@ -1855,7 +2141,7 @@ Object.assign(window.SLG, {
   tickLamport, isNewer, markDirty, clearDirty,
 
   saveState, saveStateImportant, loadState, migrateLegacyState,
-  loadSandboxModePref,                            /* ★ v9.0.0 */
+  loadSandboxModePref,
   registerCloudSync, triggerCloudSync,
   registerRoomSnapshotSync, triggerRoomSnapshotSync,
 
@@ -1880,6 +2166,7 @@ Object.assign(window.SLG, {
 
   findRoute, addRoute, removeRoute, getReachableCityIds,
   computeDefStartTimes, migratePowerInState,
+  migrateAllianceColors,                    /* ★ v9.0.1 */
 
   getAlliancesSorted, reorderAlliances, resetAllianceOrder, migrateAllianceOrder,
 
@@ -1899,5 +2186,5 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * core.js 結束（v9.0.0）
+ * core.js 結束（v9.0.1）
  * ========================================================================== */

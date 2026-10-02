@@ -1481,6 +1481,78 @@ function bindMapLibraryUI(){
   }
 }
 
+/* ★ v9.0.1 新增：地名後綴設定 UI 綁定 */
+function bindCitySuffixUI(){
+  /* 新增後綴按鈕 */
+  const btnAdd = document.getElementById('btnAddSuffix');
+  if(btnAdd && !btnAdd.dataset.bound){
+    btnAdd.dataset.bound = '1';
+    btnAdd.addEventListener('click', () => {
+      const input = document.getElementById('suffixNewInput');
+      const val = (input?.value || '').trim();
+      if(!val){ alert('請輸入後綴'); return; }
+      const result = window.SLG.addCitySuffix(val);
+      if(!result.ok){ alert('❌ ' + result.msg); return; }
+      if(input) input.value = '';
+      input?.focus();
+    });
+  }
+
+  /* Enter 快速新增 */
+  const input = document.getElementById('suffixNewInput');
+  if(input && !input.dataset.bound){
+    input.dataset.bound = '1';
+    input.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter'){ e.preventDefault(); btnAdd?.click(); }
+    });
+  }
+
+  /* 恢復預設 */
+  const btnReset = document.getElementById('btnResetSuffixes');
+  if(btnReset && !btnReset.dataset.bound){
+    btnReset.dataset.bound = '1';
+    btnReset.addEventListener('click', () => {
+      if(!confirm('確定要恢復預設後綴清單嗎？\n（現有自訂後綴會全部清除）')) return;
+      window.SLG.resetCitySuffixes();
+      renderCitySuffixTags();
+    });
+  }
+
+  /* 事件：後綴清單變更 → 重繪 */
+  if(!window.__suffixEventBound){
+    window.__suffixEventBound = true;
+    getOn()(EVT().CITY_SUFFIXES_CHANGED, () => renderCitySuffixTags());
+  }
+
+  /* 初次渲染 */
+  renderCitySuffixTags();
+}
+
+/* ★ v9.0.1 新增：渲染後綴標籤 */
+function renderCitySuffixTags(){
+  const list = document.getElementById('suffixTagList');
+  if(!list) return;
+  const suffixes = window.SLG.getCitySuffixes();
+  if(suffixes.length === 0){
+    list.innerHTML = '<div class="text-dim">尚無後綴，請新增</div>';
+    return;
+  }
+  list.innerHTML = suffixes.map(s => `
+    <span class="suffix-tag" data-suffix="${esc(s)}">
+      ${esc(s)}
+      <button class="suffix-remove" data-remove="${esc(s)}" title="刪除">✕</button>
+    </span>
+  `).join('');
+
+  list.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const suffix = btn.dataset.remove;
+      if(!confirm(`確定刪除後綴「${suffix}」？`)) return;
+      window.SLG.removeCitySuffix(suffix);
+    });
+  });
+}
 /* ============================================================
    路線刪除確認 Modal 綁定
    ============================================================ */
@@ -1673,6 +1745,129 @@ function bindSandboxSwitcherUI(){
   }
 }
 
+/* ★ v9.0.1 新增：盟色對照表 UI 綁定 */
+function bindAllianceColorUI(){
+  const btn = document.getElementById('btnAllianceColorList');
+  if(btn && !btn.dataset.bound){
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', () => {
+      openAllianceColorModal();
+    });
+  }
+
+  const closeBtn = document.getElementById('allianceColorClose');
+  if(closeBtn && !closeBtn.dataset.bound){
+    closeBtn.dataset.bound = '1';
+    closeBtn.addEventListener('click', () => {
+      document.getElementById('allianceColorModal')?.classList.remove('show');
+    });
+  }
+
+  if(!window.__allianceColorEventBound){
+    window.__allianceColorEventBound = true;
+    getOn()(EVT().ALLIANCE_COLOR_CHANGED, () => {
+      if(document.getElementById('allianceColorModal')?.classList.contains('show')){
+        renderAllianceColorList();
+      }
+    });
+  }
+}
+
+/* ★ v9.0.1 新增：開啟盟色對照表 Modal */
+function openAllianceColorModal(){
+  const modal = document.getElementById('allianceColorModal');
+  if(!modal) return;
+  modal.classList.add('show');
+  renderAllianceColorList();
+}
+
+/* ★ v9.0.1 新增：渲染盟色對照表 */
+function renderAllianceColorList(){
+  const list = document.getElementById('allianceColorList');
+  if(!list) return;
+  const state = getState();
+  const alliances = window.SLG.getAlliancesSorted();
+  if(alliances.length === 0){
+    list.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">尚無同盟</div>';
+    return;
+  }
+  const colorMap = window.SLG.getAllianceColorMap();
+  list.innerHTML = alliances.map(a => {
+    const color = colorMap.get(a.id) || a.color || '#64748b';
+    const sideCls = a.side === 'self' ? 'self'
+      : a.side === 'ally' ? 'ally'
+      : a.side === 'npc' ? 'npc' : 'enemy';
+    const isSelf = a.side === 'self';
+    return `<div class="alliance-color-row ${isSelf ? 'row-self' : ''}">
+      <span class="alliance-color-dot" style="background:${color}; color:${color};"></span>
+      <span class="alliance-color-name">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</span>
+      <span class="alliance-color-chip ${sideCls}">${window.SLG.allianceSideLabel(a.side)}</span>
+      <span class="alliance-color-hex">${color}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ★ v9.0.1 新增：建立盟色選擇器（給盟編輯 Modal 用） */
+function buildAllianceColorPicker(containerEl, allianceId, currentColor){
+  if(!containerEl) return;
+  const template = document.getElementById('allianceColorPickerTemplate');
+  if(!template) return;
+
+  const clone = template.content.cloneNode(true);
+  containerEl.innerHTML = '';
+  containerEl.appendChild(clone);
+
+  const alliance = getState().alliances.find(a => a.id === allianceId);
+  const sideLocked = alliance && (alliance.side === 'self' || alliance.side === 'ally' || alliance.side === 'npc');
+  const lockedColor = alliance ? window.SLG.SIDE_PRIORITY_COLOR[alliance.side] : null;
+
+  const grid = containerEl.querySelector('#allianceColorPickerGrid');
+  const currentDot = containerEl.querySelector('#allianceColorCurrentDot');
+  const currentText = containerEl.querySelector('#allianceColorCurrentText');
+
+  const updateCurrent = (color) => {
+    if(currentDot){ currentDot.style.background = color; currentDot.style.color = color; }
+    if(currentText){ currentText.textContent = color; }
+  };
+  updateCurrent(currentColor);
+
+  const usedColors = new Set(
+    getState().alliances
+      .filter(a => a.id !== allianceId && a.color)
+      .map(a => a.color)
+  );
+
+  const palette = window.SLG.ALLIANCE_COLOR_PALETTE;
+  grid.innerHTML = palette.map(color => {
+    const isCurrent = (color === currentColor);
+    const isLocked = sideLocked && (color !== lockedColor);
+    const isUsed = usedColors.has(color);
+    const disabled = isLocked || isUsed;
+    const cls = [
+      'alliance-color-picker-dot',
+      isCurrent ? 'selected' : '',
+      isLocked ? 'locked' : '',
+    ].filter(Boolean).join(' ');
+    return `<button type="button" class="${cls}"
+      data-color="${color}"
+      style="background:${color}; color:${color};"
+      ${disabled ? 'disabled' : ''}
+      title="${color}${isLocked ? '（鎖定）' : isUsed ? '（已使用）' : ''}"></button>`;
+  }).join('');
+
+  grid.querySelectorAll('.alliance-color-picker-dot:not([disabled])').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const color = dot.dataset.color;
+      updateCurrent(color);
+      grid.querySelectorAll('.alliance-color-picker-dot').forEach(d => d.classList.remove('selected'));
+      dot.classList.add('selected');
+      containerEl.dataset.selectedColor = color;
+    });
+  });
+
+  containerEl.dataset.selectedColor = currentColor;
+}
+
 /* ============================================================
    事件綁定
    ============================================================ */
@@ -1807,12 +2002,14 @@ function bindUI(){
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
 
   bindSyncSettingsUI();
-  bindTroopTierUI();
-  bindMapLibraryUI();
-  bindRouteDeleteModal();
-  bindBackupNowButton();
-  bindMapRelationUI();
-  bindSandboxSwitcherUI();  /* ★ v9.0.0 */
+bindTroopTierUI();
+bindMapLibraryUI();
+bindRouteDeleteModal();
+bindBackupNowButton();
+bindMapRelationUI();
+bindSandboxSwitcherUI();  /* ★ v9.0.0 */
+bindCitySuffixUI();       /* ★ v9.0.1 */
+bindAllianceColorUI();    /* ★ v9.0.1 */
 
   const btnLogout = document.getElementById('btnLogout');
   if(btnLogout && !btnLogout.dataset.bound){
@@ -2697,6 +2894,20 @@ function bindEvents(){
     if(window.SLG.renderSyncStatus) window.SLG.renderSyncStatus();
     updateModeBar();
   });
+
+  /* ★ v9.0.1 新增：地名後綴變更 → 重繪節點 */
+  getOn()(EVT().CITY_SUFFIXES_CHANGED, () => {
+    if(window.SLG.GameMap && window.SLG.GameMap.render){
+      window.SLG.GameMap.render();
+    }
+  });
+
+  /* ★ v9.0.1 新增：盟色變更 → 重繪地圖 */
+  getOn()(EVT().ALLIANCE_COLOR_CHANGED, () => {
+    if(window.SLG.GameMap && window.SLG.GameMap.render){
+      window.SLG.GameMap.render();
+    }
+  });
 }
 
 function hideAllTabContent(){
@@ -2969,8 +3180,15 @@ Object.assign(window.SLG, {
   hideSandboxDropdown,
   toggleSandboxDropdown,
   bindSandboxSwitcherUI,
-});
 
+  /* ★ v9.0.1 新增 */
+  bindCitySuffixUI,
+  renderCitySuffixTags,
+  bindAllianceColorUI,
+  openAllianceColorModal,
+  renderAllianceColorList,
+  buildAllianceColorPicker,
+});
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
 } else {
