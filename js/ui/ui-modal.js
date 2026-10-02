@@ -704,6 +704,8 @@ const NodeCalibration = (() => {
       imageEl = m.imageEl;
       if(!imageEl){ throw new Error('底圖載入失敗'); }
       nodes = JSON.parse(JSON.stringify(m.nodes || {}));
+      /* ★ v9.0.3：自動 key 標準化（修復舊資料） */
+      nodes = normalizeNodeKeys(nodes, state.cities);
       natW = imageEl.naturalWidth || mapData.imageWidth || 0;
       natH = imageEl.naturalHeight || mapData.imageHeight || 0;
       if(natW === 0 || natH === 0) throw new Error('圖片尺寸為 0');
@@ -722,6 +724,82 @@ const NodeCalibration = (() => {
     }
   }
 
+  /* ══════════════════════════════════════════════════════
+     ★ v9.0.3：節點 key 標準化
+     把所有節點的 key 統一為「城池編號（code）」
+     若無 code → 用 'n_' + city.id
+     ══════════════════════════════════════════════════════ */
+  function normalizeNodeKeys(rawNodes, cities){
+    if(!rawNodes || typeof rawNodes !== 'object') return {};
+    const result = {};
+    const cityByCode = new Map();
+    const cityByName = new Map();
+    const cityById = new Map();
+
+    for(const c of cities){
+      if(c.code) cityByCode.set(c.code, c);
+      if(c.name) cityByName.set(c.name, c);
+      cityById.set(c.id, c);
+    }
+
+    /* ── 第一輪：key 已是城池編號 → 直接保留 ── */
+    const pending = [];
+    for(const [key, node] of Object.entries(rawNodes)){
+      if(!node) continue;
+      if(cityByCode.has(key)){
+        result[key] = node;
+      } else {
+        pending.push([key, node]);
+      }
+    }
+
+    /* ── 第二輪：用 node.code / namedCityId / name 反查 ── */
+    let remappedCount = 0;
+    let orphanCount = 0;
+    for(const [key, node] of pending){
+      let targetCity = null;
+
+      /* 用 node.code 反查 */
+      if(!targetCity && node.code && cityByCode.has(node.code)){
+        targetCity = cityByCode.get(node.code);
+      }
+      /* 用 node.namedCityId 反查 */
+      if(!targetCity && node.namedCityId && cityById.has(node.namedCityId)){
+        targetCity = cityById.get(node.namedCityId);
+      }
+      /* 用 node.name 反查 */
+      if(!targetCity && node.name && cityByName.has(node.name)){
+        targetCity = cityByName.get(node.name);
+      }
+
+      if(targetCity){
+        const newKey = targetCity.code || ('n_' + targetCity.id);
+        /* 若該城池已存在節點 → 不覆蓋（保留第一輪的） */
+        if(!result[newKey]){
+          result[newKey] = Object.assign({}, node, {
+            name: targetCity.name,
+            code: targetCity.code || '',
+            namedCityId: targetCity.id,
+          });
+          remappedCount++;
+        }
+      } else {
+        /* 孤兒節點 → 保留原 key */
+        result[key] = node;
+        orphanCount++;
+      }
+    }
+
+    if(remappedCount > 0 || orphanCount > 0){
+      console.log(
+        `%c[Normalize] 節點 key 標準化：轉換 ${remappedCount} 個，孤兒 ${orphanCount} 個`,
+        'color:#22ff88;font-weight:bold'
+      );
+    }
+
+    return result;
+  }
+   
   function resetState(){
     nodes = {};
     routes = [];
