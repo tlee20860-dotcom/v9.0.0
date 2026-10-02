@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>多戰區城戰沙盤推演與多人聯合作戰室 v9.0.2</title>
+<title>多戰區城戰沙盤推演與多人聯合作戰室 v9.0.4</title>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.4/lz-string.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
-<!-- ★ v9.0.2：樣式分割為 3 檔 -->
-<link rel="stylesheet" href="style/style-base.css?v=902">
-<link rel="stylesheet" href="style/style-components.css?v=902">
-<link rel="stylesheet" href="style/style-pages.css?v=902">
+<!-- ★ v9.0.4：樣式分割為 3 檔 -->
+<link rel="stylesheet" href="style/style-base.css?v=904">
+<link rel="stylesheet" href="style/style-components.css?v=904">
+<link rel="stylesheet" href="style/style-pages.css?v=904">
 </head>
 <body>
 
@@ -38,13 +38,13 @@
 <div class="entry-gate" id="entryGate">
   <div class="entry-card">
     <div id="entryLoading" class="entry-loading">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.2</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.4</span></div>
       <div class="entry-loading-spinner"></div>
       <div class="entry-loading-text">載入中...</div>
     </div>
 
     <div id="entryMain" style="display:none;">
-      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.2</span></div>
+      <div class="entry-title">🏰 城戰沙盤推演 <span class="entry-version">v9.0.4</span></div>
 
       <div class="entry-tabs">
         <button class="entry-tab active" data-entry-view="login">🔑 登入</button>
@@ -104,7 +104,7 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-logo">🏰 城戰沙盤</span>
-      <span class="sidebar-version">v9.0.2</span>
+      <span class="sidebar-version">v9.0.4</span>
       <button class="sidebar-close" id="sidebarClose" title="關閉">✕</button>
     </div>
 
@@ -551,7 +551,7 @@
       <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <span>🤝 參戰盟清單</span>
-          <!-- ★ v9.0.2：盟編輯模式切換器 -->
+          <!-- ★ v9.0.4：盟編輯模式切換器 -->
           <div class="alliance-edit-mode-switch" id="allianceEditModeSwitch">
             <button class="aem-switch-btn" data-edit-mode="modal" title="使用 Modal 編輯（欄位完整）">🪟 Modal</button>
             <button class="aem-switch-btn" data-edit-mode="inline" title="表格內快速編輯">✏️ Inline</button>
@@ -1118,7 +1118,7 @@
                 <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
               </div>
 
-              <!-- ★ v9.0.2：修復重複 button（原為 <button class="map-fullscreen-exit" <button ...） -->
+              <!-- ★ v9.0.4：修復重複 button（原為 <button class="map-fullscreen-exit" <button ...） -->
               <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
                 ✖️ 退出全螢幕
               </button>
@@ -1442,7 +1442,7 @@
          ============================================================ -->
     <section id="tab-rules" class="tab-content">
       <div class="card">
-        <div class="card-title">📖 城戰計算規則（v9.0.2）</div>
+        <div class="card-title">📖 城戰計算規則（v9.0.4）</div>
         <div class="rules-doc">
           <h2>一、資料模型</h2>
           <div class="rule-card ok">
@@ -1512,7 +1512,7 @@
             <b>智譜 API Key 儲存於 Cloudflare Pages Functions 環境變數</b>，前端完全接觸不到 Key。<br>
             所有 AI 請求經過 <code>/api/ocr</code> 代理。
           </div>
-          <h2>十二、v9.0.2 盟編輯模式</h2>
+          <h2>十二、v9.0.4 盟編輯模式</h2>
           <div class="rule-card title">
             <b>🪟 Modal 模式</b>：欄位完整，含盟色選擇器。<br>
             <b>✏️ Inline 模式</b>：表格內快速編輯（輕量）。<br>
@@ -2116,7 +2116,7 @@
 </div>
 
 <!-- ============================================================
-     ★ v9.0.2：盟編輯 Modal（新增）
+     ★ v9.0.4：盟編輯 Modal（新增）
      ============================================================ -->
 <div class="modal-overlay" id="allianceEditModal">
   <div class="modal-box modal-lg" style="max-width:480px;">
@@ -2262,7 +2262,7 @@
 </template>
 
 <!-- ============================================================
-     核心載入順序（v9.0.2）
+     核心載入順序（v9.0.4）
      ============================================================ -->
 
 <!-- ① 外部模組（無依賴） -->
