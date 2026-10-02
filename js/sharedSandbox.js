@@ -88,9 +88,44 @@ const SharedSandboxManager = (() => {
       const raw = snap.val();
       if(!raw) throw new Error('共享沙盤不存在');
 
-      /* 驗證結構 */
+     /* ★ v9.0.3：自動修復結構（兼容空沙盤 / 舊資料） */
+      if(!raw.data) raw.data = {};
+      if(!Array.isArray(raw.data.cities)) raw.data.cities = [];
+      if(!Array.isArray(raw.data.alliances)) raw.data.alliances = [];
+      if(!Array.isArray(raw.data.zones)) raw.data.zones = [];
+      if(!Array.isArray(raw.data.routes)) raw.data.routes = [];
+      if(!raw.data.settings || typeof raw.data.settings !== 'object'){
+        raw.data.settings = {
+          timeLimitMin: 120,
+          consumeMinPerMin: 10,
+          consumeMaxPerMin: 30,
+          siegeEfficiency: 1,
+          marchTimeSec: 0,
+          maxLossRatio: 0.9,
+          minLossRatio: 0.1,
+          attackRequireRoute: false,
+          crossZoneWarAllowed: false,
+          routeRequireSameMap: true,
+          warRequireSameMap: true,
+        };
+      }
+      if(!raw.data.troopTiers || !Array.isArray(raw.data.troopTiers.tiers)){
+        raw.data.troopTiers = {
+          tiers: [
+            { maxLevel: 17, teamsPerPlayer: 3 },
+            { maxLevel: 20, teamsPerPlayer: 4 },
+            { maxLevel: 24, teamsPerPlayer: 5 },
+            { maxLevel: 'Infinity', teamsPerPlayer: 6 },
+          ],
+          autoCalcOnImport: true,
+          preserveOldTotal: false,
+        };
+      }
+
+      /* 驗證結構（修復後應可通過） */
       if(!window.SLG.DataMigrations.validate(raw)){
-        throw new Error('共享沙盤結構異常');
+        console.error('[SharedSB] 修復後仍驗證失敗', raw);
+        throw new Error('共享沙盤結構異常（請聯繫管理員）');
       }
 
       /* 遷移 */
