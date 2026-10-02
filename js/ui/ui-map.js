@@ -243,6 +243,24 @@ const GameMap = (() => {
       btnExportPDF.dataset.bound = '1';
       btnExportPDF.addEventListener('click', exportAsPDF);
     }
+    
+    /* ★ v9.0.9：工具列摺疊（手機版） */
+const btnToolbarToggle = document.getElementById('btnMapToolbarToggle');
+const mapToolbar = document.getElementById('mapToolbar');
+if(btnToolbarToggle && mapToolbar && !btnToolbarToggle.dataset.bound){
+  btnToolbarToggle.dataset.bound = '1';
+  btnToolbarToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    mapToolbar.classList.toggle('collapsed');
+    const icon = btnToolbarToggle.querySelector('.toggle-icon');
+    const text = btnToolbarToggle.querySelector('.toggle-text');
+    const isCollapsed = mapToolbar.classList.contains('collapsed');
+    if(icon) icon.textContent = isCollapsed ? '▶' : '▼';
+    if(text) text.textContent = isCollapsed ? '展開工具列' : '收合工具列';
+    /* 觸發地圖重繪（因高度改變） */
+    setTimeout(() => { render(); }, 100);
+  });
+}
 
     /* ★ v9.0.1 新增：盟色對照表浮動按鈕 */
     const btnAllianceColor = document.getElementById('btnAllianceColorList');
