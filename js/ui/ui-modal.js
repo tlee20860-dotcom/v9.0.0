@@ -706,8 +706,9 @@ const NodeCalibration = (() => {
       nodes = JSON.parse(JSON.stringify(m.nodes || {}));
       /* ★ v9.0.3：自動 key 標準化（修復舊資料） */
       nodes = normalizeNodeKeys(nodes, state.cities);
+      /* ★ v9.0.3：合併 city.mapNode 到 nodes（同步大地圖新增的節點） */
+      nodes = mergeCityMapNodes(nodes, state.cities, mapId);
       natW = imageEl.naturalWidth || mapData.imageWidth || 0;
-      natH = imageEl.naturalHeight || mapData.imageHeight || 0;
       if(natW === 0 || natH === 0) throw new Error('圖片尺寸為 0');
       if(nameEl) nameEl.textContent = m.name || '未命名';
 
@@ -798,6 +799,44 @@ const NodeCalibration = (() => {
     }
 
     return result;
+  }
+
+     /* ══════════════════════════════════════════════════════
+     ★ v9.0.3：合併 city.mapNode 到 nodes
+     用途：大地圖新增/拖曳的節點，寫入 city.mapNode 但未寫回
+          地圖庫 nodes。此函式把兩者合併，讓節點校準能看見。
+     ══════════════════════════════════════════════════════ */
+  function mergeCityMapNodes(nodes, cities, mapId){
+    if(!nodes) nodes = {};
+    if(!Array.isArray(cities)) return nodes;
+
+    let mergedCount = 0;
+    for(const c of cities){
+      if(!c.mapNode) continue;
+      if(typeof c.mapNode.x !== 'number' || typeof c.mapNode.y !== 'number') continue;
+      if(c.mapNode.mapId && c.mapNode.mapId !== mapId) continue;
+
+      const key = c.code || ('n_' + c.id);
+      if(nodes[key]) continue;
+
+      nodes[key] = {
+        name: c.name,
+        code: c.code || '',
+        x: Math.round(c.mapNode.x),
+        y: Math.round(c.mapNode.y),
+        namedCityId: c.id,
+        source: c.mapNode.method || 'manual',
+      };
+      mergedCount++;
+    }
+
+    if(mergedCount > 0){
+      console.log(
+        `%c[Merge] 從 city.mapNode 補進 ${mergedCount} 個節點到節點校準`,
+        'color:#22ff88;font-weight:bold'
+      );
+    }
+    return nodes;
   }
    
   function resetState(){
