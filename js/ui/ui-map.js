@@ -1,5 +1,5 @@
 /* ============================================================================
- * js/ui/ui-map.js — v9.0.2
+ * js/ui/ui-map.js — v9.1.2
  * 內容：
  *   GameMap — 地圖主模組
  *     ★ v9.0.2 節點顯示優化（縮圈 50%）：
@@ -13,6 +13,7 @@
  *       - 圈半徑：18/21/24/27（原 36/42/48/54 縮 50%）
  *       - 字級：8/11/14（原 10/14/18 縮約 50%）
  *     ★ v9.0.2：buildAllianceColorPicker 已移至 ui-core.js
+ *     ★ v9.1.2：新增 fallbackWarPanel — WarQuickPanel 未載入時的內聯備援
  * ========================================================================== */
 (function(){
 'use strict';
@@ -245,22 +246,21 @@ const GameMap = (() => {
     }
     
     /* ★ v9.0.9：工具列摺疊（手機版） */
-const btnToolbarToggle = document.getElementById('btnMapToolbarToggle');
-const mapToolbar = document.getElementById('mapToolbar');
-if(btnToolbarToggle && mapToolbar && !btnToolbarToggle.dataset.bound){
-  btnToolbarToggle.dataset.bound = '1';
-  btnToolbarToggle.addEventListener('click', (e) => {
-    e.stopPropagation();
-    mapToolbar.classList.toggle('collapsed');
-    const icon = btnToolbarToggle.querySelector('.toggle-icon');
-    const text = btnToolbarToggle.querySelector('.toggle-text');
-    const isCollapsed = mapToolbar.classList.contains('collapsed');
-    if(icon) icon.textContent = isCollapsed ? '▶' : '▼';
-    if(text) text.textContent = isCollapsed ? '展開工具列' : '收合工具列';
-    /* 觸發地圖重繪（因高度改變） */
-    setTimeout(() => { render(); }, 100);
-  });
-}
+    const btnToolbarToggle = document.getElementById('btnMapToolbarToggle');
+    const mapToolbar = document.getElementById('mapToolbar');
+    if(btnToolbarToggle && mapToolbar && !btnToolbarToggle.dataset.bound){
+      btnToolbarToggle.dataset.bound = '1';
+      btnToolbarToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        mapToolbar.classList.toggle('collapsed');
+        const icon = btnToolbarToggle.querySelector('.toggle-icon');
+        const text = btnToolbarToggle.querySelector('.toggle-text');
+        const isCollapsed = mapToolbar.classList.contains('collapsed');
+        if(icon) icon.textContent = isCollapsed ? '▶' : '▼';
+        if(text) text.textContent = isCollapsed ? '展開工具列' : '收合工具列';
+        setTimeout(() => { render(); }, 100);
+      });
+    }
 
     /* ★ v9.0.1 新增：盟色對照表浮動按鈕 */
     const btnAllianceColor = document.getElementById('btnAllianceColorList');
@@ -295,13 +295,11 @@ if(btnToolbarToggle && mapToolbar && !btnToolbarToggle.dataset.bound){
       window.SLG.on(window.SLG.EVT.MAP_LIBRARY_UPDATED, () => {
         onMapLibraryChanged();
       });
-      /* ★ v9.0.1：盟色變更 → 重繪 */
       if(window.SLG.EVT.ALLIANCE_COLOR_CHANGED){
         window.SLG.on(window.SLG.EVT.ALLIANCE_COLOR_CHANGED, () => {
           render();
         });
       }
-      /* ★ v9.0.1：後綴變更 → 重繪 */
       if(window.SLG.EVT.CITY_SUFFIXES_CHANGED){
         window.SLG.on(window.SLG.EVT.CITY_SUFFIXES_CHANGED, () => {
           render();
@@ -1402,14 +1400,92 @@ if(btnToolbarToggle && mapToolbar && !btnToolbarToggle.dataset.bound){
     const state = getState();
     const fromCity = state.cities.find(c => c.id === warFromCityId);
     const toCity = city;
-    if(fromCity && toCity && window.SLG.WarQuickPanel){
+    if(!fromCity || !toCity) return;
+
+    /* ★ v9.1.2：優先使用 WarQuickPanel；若未載入則使用內聯備援 */
+    if(window.SLG.WarQuickPanel && typeof window.SLG.WarQuickPanel.open === 'function'){
       window.SLG.WarQuickPanel.open(fromCity, toCity, () => {
         warFromCityId = '';
         warHoverTgtId = '';
         updateModeHint();
         render();
       });
+      return;
     }
+
+    console.warn('[GameMap] ⚠️ WarQuickPanel 未載入，使用內聯宣戰備援');
+    fallbackWarPanel(fromCity, toCity);
+  }
+
+  /* ★ v9.1.2：內聯宣戰備援（WarQuickPanel 未載入時使用） */
+  function fallbackWarPanel(fromCity, toCity){
+    const typeStr = prompt(
+      `⚔️ 建立宣戰\n\n${fromCity.name} → ${toCity.name}\n\n` +
+      `請選擇類型：\n  1 = 進攻\n  2 = 協防\n\n` +
+      `（輸入 1 或 2）`,
+      '1'
+    );
+    if(typeStr === null) return;
+    const isAttack = (typeStr.trim() !== '2');
+
+    /* 協防驗證 */
+    if(!isAttack){
+      if(!fromCity.allianceId || fromCity.allianceId !== toCity.allianceId){
+        alert('⚠️ 協防需要出兵城與目標城同屬一個盟');
+        return;
+      }
+      if(!window.SLG.findRoute(fromCity.id, toCity.id)){
+        alert('⚠️ 協防需要路線上必須有接觸');
+        return;
+      }
+    }
+
+    const pctStr = prompt('派兵百分比（戰前% / 復活%）：', '50');
+    if(pctStr === null) return;
+    const pct = Math.max(0, Math.min(100, parseInt(pctStr, 10) || 50));
+
+    let startTime = '';
+    if(isAttack){
+      const timeStr = prompt('開始時間（HH:MM）：', '19:00');
+      if(timeStr === null) return;
+      startTime = timeStr.trim() || '19:00';
+    }
+
+    const state = getState();
+    const arr = isAttack ? 'attackTargets' : 'defendTargets';
+    if(!fromCity[arr]) fromCity[arr] = [];
+
+    /* 已存在 → 覆蓋 */
+    const existingIdx = fromCity[arr].findIndex(t => t.cityId === toCity.id);
+    if(existingIdx >= 0){
+      if(!confirm(`「${fromCity.name}」→「${toCity.name}」已有宣戰指示，是否覆蓋？`)) return;
+      fromCity[arr][existingIdx].preWarPercent = pct;
+      fromCity[arr][existingIdx].postRevivePercent = pct;
+      fromCity[arr][existingIdx].attackStartTime = startTime;
+    } else {
+      fromCity[arr].push({
+        cityId: toCity.id,
+        preWarPercent: pct,
+        postRevivePercent: pct,
+        priority: 1,
+        attackStartTime: startTime,
+      });
+    }
+
+    state.entityRev.city[fromCity.id] = (state.entityRev.city[fromCity.id] || 0) + 1;
+    if(window.SLG.markDirty) window.SLG.markDirty('city', fromCity.id);
+    if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+    if(window.SLG.tickLamport) window.SLG.tickLamport();
+    if(window.SLG.flushPatches) window.SLG.flushPatches();
+    if(window.SLG.saveState) window.SLG.saveState('important');
+    if(window.SLG.WarManager) window.SLG.WarManager.render();
+    if(window.SLG.GameMap) window.SLG.GameMap.accumulateWarChange();
+
+    warFromCityId = '';
+    warHoverTgtId = '';
+    updateModeHint();
+    render();
+    logSystem(`⚔️ 已建立宣戰：${fromCity.name} → ${toCity.name}（${isAttack ? '進攻' : '協防'} ${pct}%）`);
   }
 
   function accumulateWarChange(){
@@ -2284,6 +2360,8 @@ if(btnToolbarToggle && mapToolbar && !btnToolbarToggle.dataset.bound){
     showNodeDeleteConfirm,
     reconcileData,
     getActiveMapNodes: () => activeMapNodes,
+    /* ★ v9.1.2：暴露 fallbackWarPanel 供測試 */
+    _fallbackWarPanel: fallbackWarPanel,
   };
 })();
 
@@ -2296,20 +2374,13 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-map.js 結束（v9.0.2）
- * ★ v9.0.2 變更摘要：
- *   1. getRadiusByLineCount：36/42/48/54 → 18/21/24/27（縮 50%）
- *   2. getFontSizeByZoom：10/14/18 → 8/11/14（縮約 50%）
- *   3. drawCityNode：
- *      - badgeR 10 → 5
- *      - badge 位置 radius-6 → radius-3
- *      - borderWidth 5/3 → 3/2
- *      - 高亮外圈 +10/+14/+6 → +5/+7/+3
- *      - 高亮線寬 5/4/3 → 3/2.5/2
- *      - 文字描邊 lineWidth 3 → 2
- *      - 首都標記 14px → 10px，位置微調
- *   4. pickCity：minDist 40 → 20
- *   5. drawWarArrows：NODE_RADIUS 30 → 18
- *   6. drawCrossZoneEdge/Arrow：startX 偏移 36 → 18
- *   7. 移除 buildAllianceColorPicker（已移至 ui-core.js）
+ * ui-map.js 結束（v9.1.2）
+ * ★ v9.1.2 變更摘要：
+ *   1. handleWarTapWithCity：加入 WarQuickPanel 未載入時的內聯備援
+ *   2. 新增 fallbackWarPanel(fromCity, toCity)：
+ *      - 用 prompt/confirm 完成宣戰建立
+ *      - 支援 進攻 / 協防
+ *      - 驗證協防同盟 + 路線接觸
+ *      - 寫入 state.entityRev / markDirty / flushPatches
+ *   3. GameMap._fallbackWarPanel 暴露供測試
  * ========================================================================== */

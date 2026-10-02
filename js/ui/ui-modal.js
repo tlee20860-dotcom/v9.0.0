@@ -3552,13 +3552,56 @@ Object.assign(window.SLG, {
     console.error('window.SLG.WarQuickPanel =', panel);
     console.error('可能原因：ui-modal.js 載入順序錯誤、語法錯誤、或檔案未正確上傳。');
 
-    // 提供緊急修復：若 window.SLG.WarQuickPanel 不存在但本地變數存在，強制賦值
-    // 注意：此處的 WarQuickPanel 常數在 IIFE 作用域內，無法在此處直接訪問。
-    // 此檢查主要是為了在主控台提供明確的錯誤訊息，方便開發者排查。
+    /* ★ v9.1.2：最後一道保險 — 若 Object.assign 因任何原因沒跑到，
+       嘗試從本地 IIFE 變數強制暴露 WarQuickPanel 到 window.SLG */
+    try{
+      if(typeof WarQuickPanel === 'object' && WarQuickPanel &&
+         typeof WarQuickPanel.open === 'function'){
+        window.SLG.WarQuickPanel = WarQuickPanel;
+        console.log(
+          '%c[FIX] 已強制暴露 WarQuickPanel 至 window.SLG',
+          'color:#22ff88;background:#0a101a;padding:2px 8px;border-radius:4px;font-weight:bold'
+        );
+      } else {
+        console.warn(
+          '%c[FIX] WarQuickPanel 本地變數也無效，無法自動修復。' +
+          '\n請確認線上 js/ui/ui-modal.js 為 v9.1.2（含 const WarQuickPanel 定義）',
+          'color:#ffcc00;font-weight:bold'
+        );
+      }
+    }catch(e){
+      console.error('[FIX] 強制暴露失敗', e);
+    }
   } else {
     console.log(
       '%c[OK] WarQuickPanel 已正確載入。',
       'color:#22ff88;font-weight:bold'
+    );
+  }
+
+  /* ★ v9.1.2：同時驗證其他關鍵模組（供診斷用） */
+  const checks = [
+    ['GameMap',          window.SLG.GameMap,          'render'],
+    ['MapLibrary',       window.SLG.MapLibrary,       'init'],
+    ['NodeCalibration',  window.SLG.NodeCalibration,  'open'],
+    ['ColumnManager',    window.SLG.ColumnManager,    'register'],
+    ['AllianceEditModal',window.SLG.AllianceEditModal,'open'],
+  ];
+  const failed = [];
+  for(const [name, obj, method] of checks){
+    if(!obj || typeof obj[method] !== 'function'){
+      failed.push(name);
+    }
+  }
+  if(failed.length > 0){
+    console.warn(
+      '%c[模組檢查] 以下模組未正確載入：' + failed.join(', '),
+      'color:#ffcc00;font-weight:bold'
+    );
+  } else {
+    console.log(
+      '%c[模組檢查] 全部通過 ✅',
+      'color:#22ff88;font-size:11px'
     );
   }
 })();
