@@ -1547,11 +1547,13 @@ textarea:disabled{
   }
 }
 
-/* ── 表格隱藏欄位的樣式（v9.1.1 修正）── */
-/* 直接對 .col-hidden 生效，不依賴 table 屬性 */
+/* ── 表格隱藏欄位的樣式（v9.1.1 修正：更寬鬆的選擇器）── */
+th.col-hidden,
+td.col-hidden,
 th[data-col-key].col-hidden,
 td[data-col-key].col-hidden,
-.col-hidden{
+table[data-col-hidden] th.col-hidden,
+table[data-col-hidden] td.col-hidden{
   display:none !important;
 }
 
