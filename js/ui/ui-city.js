@@ -1,16 +1,16 @@
 /* ============================================================================
- * js/ui/ui-city.js — v9.0.4
+ * js/ui/ui-city.js — v9.1.0
  * 內容：
  *   CityManager — 城池清單表格
  *     • 表格 / 卡片檢視切換
- *     • 批次操作（戰區 / 盟 / 陣營 / 刪除）
+ *     • 批次操作（地圖 / 戰區 / 盟 / 陣營 / 刪除）
  *     • 行內編輯（點 ✏️ 展開編輯）
  *     • 分級 inline 編輯（點人數欄展開面板）
  *     • 篩選器（地圖 / 戰區 / 盟 / 陣營 / 定位 / 排序 / 搜尋）
- *     • ★ v9.0.4：定位狀態顯示（表格 + 卡片）
- *     • 聯盟分佈摘要
+ *     • 定位狀態顯示（表格 + 卡片）
+ *     • ★ v9.1.0：所有 <td> 加 data-col-key（供 ColumnManager 用）
  *
- * 依賴：window.SLG（core.js）+ DOM
+ * 依賴：window.SLG（core.js + ui-core.js）+ DOM
  * ========================================================================== */
 (function(){
 'use strict';
@@ -28,6 +28,7 @@ const formatPower = (n) => window.SLG.formatPower(n);
 const formatAvgPower = (n) => window.SLG.formatAvgPower(n);
 const calcTeamsFromTiers = (t) => window.SLG.calcTeamsFromTiers(t);
 const getAuth = () => window.SLG.Auth;
+const getColumnManager = () => window.SLG.ColumnManager;
 
 /* ============================================================
    CityManager
@@ -38,13 +39,7 @@ const CityManager = (() => {
   let editingCityTierId = null;
 
   /* ══════════════════════════════════════════════════════
-     ★ v9.0.4：計算城池定位狀態
-     回傳：{ status, mapId, mapName, x, y, nodeId, hasNodeInLib, cityMapNode }
-     status 可能值：
-       'unlocated'  — 完全沒定位
-       'synced'     — city.mapNode + 地圖庫 nodes 都有
-       'mismatch'   — 只有一邊有
-       'crossmap'   — 定位在其他地圖
+     定位狀態計算（v9.0.4）
      ══════════════════════════════════════════════════════ */
   function getCityLocationStatus(city){
     const state = getState();
@@ -61,7 +56,6 @@ const CityManager = (() => {
 
     if(!city) return result;
 
-    /* ① 檢查 city.mapNode */
     if(city.mapNode && typeof city.mapNode.x === 'number' && typeof city.mapNode.y === 'number'){
       result.cityMapNode = true;
       result.mapId = city.mapNode.mapId || '';
@@ -70,14 +64,12 @@ const CityManager = (() => {
       result.nodeId = city.mapNode.nodeId || '';
     }
 
-    /* ② 檢查地圖庫 nodes */
     if(result.mapId){
       const map = state.mapLibrary.loaded[result.mapId];
       if(map && map.nodes){
         const key = city.code || ('n_' + city.id);
         if(map.nodes[key]){
           result.hasNodeInLib = true;
-          /* 若 city.mapNode 沒有，但有地圖庫 → 取地圖庫座標 */
           if(!result.cityMapNode){
             result.x = Math.round(map.nodes[key].x);
             result.y = Math.round(map.nodes[key].y);
@@ -87,13 +79,11 @@ const CityManager = (() => {
       }
     }
 
-    /* ③ 取得地圖名稱 */
     if(result.mapId){
       const meta = state.mapLibrary.index[result.mapId];
       result.mapName = meta ? (meta.name || '未命名') : '（未知地圖）';
     }
 
-    /* ④ 判定狀態 */
     const activeMapId = state.mapLibrary.activeMapId || '';
 
     if(!result.cityMapNode && !result.hasNodeInLib){
@@ -109,9 +99,6 @@ const CityManager = (() => {
     return result;
   }
 
-  /* ══════════════════════════════════════════════════════
-     ★ v9.0.4：渲染定位狀態徽章（HTML）
-     ══════════════════════════════════════════════════════ */
   function renderLocationBadge(city){
     const loc = getCityLocationStatus(city);
     let cls = 'loc-badge loc-';
@@ -153,10 +140,9 @@ const CityManager = (() => {
   }
 
   /* ══════════════════════════════════════════════════════
-     初始化：綁定所有 UI 事件
+     初始化
      ══════════════════════════════════════════════════════ */
   function init(){
-    /* ── 表格 / 卡片檢視切換 ── */
     const btn = document.getElementById('btnCityViewToggle');
     if(btn && !btn.dataset.bound){
       btn.dataset.bound = '1';
@@ -171,7 +157,6 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 篩選器（含 ★ v9.0.4 新增 cityFilterLoc）── */
     ['cityFilterMap','cityFilterZone','cityFilterAlliance','cityFilterSide',
      'cityFilterLoc','citySortBy','citySearchInput'].forEach(id => {
       const el = document.getElementById(id);
@@ -182,7 +167,6 @@ const CityManager = (() => {
       }
     });
 
-    /* 地圖篩選變更 → 需重填戰區選項 */
     const mapFilterEl = document.getElementById('cityFilterMap');
     if(mapFilterEl && !mapFilterEl.dataset.mapBound){
       mapFilterEl.dataset.mapBound = '1';
@@ -192,7 +176,6 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 全選 checkbox ── */
     const selAll = document.getElementById('citySelectAll');
     if(selAll && !selAll.dataset.bound){
       selAll.dataset.bound = '1';
@@ -204,7 +187,7 @@ const CityManager = (() => {
       });
     }
 
-       /* ── 批次套用：地圖（★ v9.0.5）── */
+    /* 批次地圖 */
     const btnApplyMap = document.getElementById('btnCityBatchApplyMap');
     if(btnApplyMap && !btnApplyMap.dataset.bound){
       btnApplyMap.dataset.bound = '1';
@@ -216,7 +199,7 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 批次套用：戰區 ── */
+    /* 批次戰區 */
     const btnApplyZone = document.getElementById('btnCityBatchApplyZone');
     if(btnApplyZone && !btnApplyZone.dataset.bound){
       btnApplyZone.dataset.bound = '1';
@@ -228,7 +211,7 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 批次套用：盟 ── */
+    /* 批次盟 */
     const btnApplyAlliance = document.getElementById('btnCityBatchApplyAlliance');
     if(btnApplyAlliance && !btnApplyAlliance.dataset.bound){
       btnApplyAlliance.dataset.bound = '1';
@@ -239,7 +222,7 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 批次套用：陣營 ── */
+    /* 批次陣營 */
     const btnApplySide = document.getElementById('btnCityBatchApplySide');
     if(btnApplySide && !btnApplySide.dataset.bound){
       btnApplySide.dataset.bound = '1';
@@ -250,7 +233,7 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 批次刪除 ── */
+    /* 批次刪除 */
     const btnBatchDel = document.getElementById('btnCityBatchDelete');
     if(btnBatchDel && !btnBatchDel.dataset.bound){
       btnBatchDel.dataset.bound = '1';
@@ -279,13 +262,12 @@ const CityManager = (() => {
       });
     }
 
-    /* ── tbody 委派事件 ── */
+    /* tbody 委派事件 */
     const tbody = document.getElementById('cityTableBody');
     if(tbody && !tbody.dataset.bound){
       tbody.dataset.bound = '1';
 
       tbody.addEventListener('click', (e) => {
-        /* 分級儲存 / 取消 */
         const tierSaveBtn = e.target.closest('[data-action="save-tier"]');
         if(tierSaveBtn){
           e.preventDefault();
@@ -301,7 +283,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 分級編輯：點人數 cell */
         const memberCell = e.target.closest('.city-member-cell');
         if(memberCell){
           if(memberCell.classList.contains('disabled-cell')) return;
@@ -313,7 +294,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 行內編輯儲存 / 取消 */
         const saveBtn = e.target.closest('[data-action="save-city-inline"]');
         if(saveBtn){
           e.preventDefault();
@@ -327,7 +307,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 進入行內編輯 */
         const editBtn = e.target.closest('[data-action="edit-city"]');
         if(editBtn){
           e.preventDefault();
@@ -335,7 +314,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 刪除 */
         const delBtn = e.target.closest('[data-action="del-city"]');
         if(delBtn){
           e.preventDefault();
@@ -426,7 +404,7 @@ const CityManager = (() => {
     if(cnt) cnt.textContent = ids.length;
   }
 
-    function applyBatch(field, value){
+  function applyBatch(field, value){
     const state = getState();
     const ids = getCheckedIds();
     if(ids.length === 0){ alert('請先勾選城池'); return; }
@@ -434,7 +412,6 @@ const CityManager = (() => {
     /* ★ v9.0.5：批次改地圖 → 特殊處理 */
     if(field === 'mapId'){
       if(!value){
-        /* 清除地圖 → 移除 mapNode + 清 Firebase 節點 */
         let clearCount = 0;
         for(const id of ids){
           const city = state.cities.find(c => c.id === id);
@@ -465,20 +442,17 @@ const CityManager = (() => {
         return;
       }
 
-      /* 指定地圖 → 自動分配臨時座標 */
       let setCount = 0;
       for(const id of ids){
         const city = state.cities.find(c => c.id === id);
         if(!city) continue;
 
-        /* 若已在此地圖 → 跳過（不需重分配） */
         if(city.mapNode && city.mapNode.mapId === value){
           state.entityRev.city[id] = (state.entityRev.city[id] || 0) + 1;
           if(window.SLG.markDirty) window.SLG.markDirty('city', id);
           continue;
         }
 
-        /* 產生 hash 座標（與 inline 編輯一致） */
         const hash = (str) => {
           let h = 0;
           for(let k = 0; k < str.length; k++) h = ((h << 5) - h) + str.charCodeAt(k);
@@ -496,7 +470,6 @@ const CityManager = (() => {
             mapId: value,
           });
         } else {
-          /* 沒 DataSyncManager 時手動寫 */
           city.mapNode = {
             mapId: value,
             nodeId: city.code || ('n_' + id),
@@ -528,7 +501,7 @@ const CityManager = (() => {
       return;
     }
 
-    /* 其他欄位（戰區 / 盟 / 陣營）一般處理 */
+    /* 其他欄位 */
     for(const id of ids){
       const city = state.cities.find(c => c.id === id);
       if(!city) continue;
@@ -558,7 +531,7 @@ const CityManager = (() => {
     const zoneId = document.getElementById('cityFilterZone')?.value || 'all';
     const allianceId = document.getElementById('cityFilterAlliance')?.value || 'all';
     const side = document.getElementById('cityFilterSide')?.value || 'all';
-    const locFilter = document.getElementById('cityFilterLoc')?.value || 'all';  /* ★ v9.0.4 */
+    const locFilter = document.getElementById('cityFilterLoc')?.value || 'all';
     const sortBy = document.getElementById('citySortBy')?.value || 'default';
     const search = (document.getElementById('citySearchInput')?.value || '').trim().toLowerCase();
 
@@ -570,7 +543,6 @@ const CityManager = (() => {
     };
 
     let cities = state.cities.filter(c => {
-      /* 地圖篩選 */
       if(mapFilter === 'active' && activeMapId){
         const mapId = getMapIdOf(c);
         if(mapId && mapId !== activeMapId) return false;
@@ -578,11 +550,9 @@ const CityManager = (() => {
         const mapId = getMapIdOf(c);
         if(mapId !== mapFilter) return false;
       }
-      /* 其他篩選 */
       if(zoneId !== 'all' && c.zoneId !== zoneId) return false;
       if(allianceId !== 'all' && c.allianceId !== allianceId) return false;
       if(side !== 'all' && c.side !== side) return false;
-      /* ★ v9.0.4：定位狀態篩選 */
       if(locFilter !== 'all'){
         const loc = getCityLocationStatus(c);
         if(loc.status !== locFilter) return false;
@@ -594,7 +564,6 @@ const CityManager = (() => {
       return true;
     });
 
-    /* 排序 */
     const mapName = id => state.mapLibrary.index?.[id]?.name || '（無地圖）';
     const zoneName = id => state.zones.find(z => z.id === id)?.name || '（未分配）';
     const allianceName = id => state.alliances.find(a => a.id === id)?.name || '';
@@ -618,21 +587,22 @@ const CityManager = (() => {
   }
 
   /* ══════════════════════════════════════════════════════
-     人數 cell（含懸停明細）
+     人數 cell
      ══════════════════════════════════════════════════════ */
   function renderMemberCell(c, isEditingInline){
     if(isEditingInline){
-      return `<td class="col-num">—</td>`;
+      return `<td class="col-num" data-col-key="members">—</td>`;
     }
     const isTierEditing = (editingCityTierId === c.id);
     const cls = `col-num city-member-cell${isTierEditing ? ' tier-editing' : ''}`;
     const title = isTierEditing ? '編輯中' : '點擊編輯分級人數';
+    const colKeyAttr = `data-col-key="members"`;
 
     const hasTiers = c.tierCounts &&
       (c.tierCounts.tier1 || c.tierCounts.tier2 || c.tierCounts.tier3 || c.tierCounts.tier4);
 
     if(!hasTiers){
-      return `<td class="${cls}" data-city-id="${c.id}" title="${title}">${c.memberCount || 0}</td>`;
+      return `<td class="${cls}" ${colKeyAttr} data-city-id="${c.id}" title="${title}">${c.memberCount || 0}</td>`;
     }
 
     const state = getState();
@@ -644,14 +614,14 @@ const CityManager = (() => {
     if(tc.tier3 > 0) detailRows.push(`<div class="row"><span>≤${tiers[2].maxLevel}級</span><b>${tc.tier3} 人</b></div>`);
     if(tc.tier4 > 0) detailRows.push(`<div class="row"><span>≥25級</span><b>${tc.tier4} 人</b></div>`);
 
-    return `<td class="${cls}" data-city-id="${c.id}" title="${title}">
+    return `<td class="${cls}" ${colKeyAttr} data-city-id="${c.id}" title="${title}">
       ${c.memberCount || 0}
       <div class="member-detail">${detailRows.join('')}</div>
     </td>`;
   }
 
   /* ══════════════════════════════════════════════════════
-     分級編輯行（展開面板）
+     分級編輯行
      ══════════════════════════════════════════════════════ */
   function renderTierEditRow(c){
     const state = getState();
@@ -800,12 +770,12 @@ const CityManager = (() => {
   }
 
   /* ══════════════════════════════════════════════════════
-     主渲染
+     ★ v9.1.0：主渲染（所有 <td> 加 data-col-key）
      ══════════════════════════════════════════════════════ */
   function render(){
-   const state = getState();
+    const state = getState();
     populateFilters();
-    populateBatchMapOptions();   /* ★ v9.0.5 */
+    populateBatchMapOptions();
     populateBatchZoneOptions();
     populateBatchAllianceOptions();
 
@@ -851,25 +821,25 @@ const CityManager = (() => {
             ).join('');
 
             rowHtml = `<tr data-city-id="${c.id}" class="inline-editing">
-              <td><input type="checkbox" class="city-cb" data-id="${c.id}" disabled></td>
-              <td class="inline-select-td"><select data-inline-field="mapId">${mapOpts}</select></td>
-              <td class="inline-select-td"><select data-inline-field="zoneId">${zoneOpts}</select></td>
-              <td class="inline-select-td"><select data-inline-field="allianceId">${allianceOpts}</select></td>
-              <td class="inline-select-td"><select data-inline-field="side">${sideOpts}</select></td>
-              <td><input type="text" class="inline-num-input" data-inline-field="code" value="${esc(c.code||'')}" maxlength="20" placeholder="編號"></td>
-              <td class="city-name"><input type="text" class="inline-name-input" data-inline-field="name" value="${esc(c.name)}" maxlength="20"></td>
-              <td><input type="number" class="inline-num-input" data-inline-field="level" value="${c.level||1}" min="1" max="10" step="1"></td>
-              <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="memberCount" value="${c.memberCount||0}" min="0" step="1"></td>
-              <td class="col-num">
+              <td data-col-key="checkbox"><input type="checkbox" class="city-cb" data-id="${c.id}" disabled></td>
+              <td class="inline-select-td" data-col-key="map"><select data-inline-field="mapId">${mapOpts}</select></td>
+              <td class="inline-select-td" data-col-key="zone"><select data-inline-field="zoneId">${zoneOpts}</select></td>
+              <td class="inline-select-td" data-col-key="alliance"><select data-inline-field="allianceId">${allianceOpts}</select></td>
+              <td class="inline-select-td" data-col-key="side"><select data-inline-field="side">${sideOpts}</select></td>
+              <td data-col-key="code"><input type="text" class="inline-num-input" data-inline-field="code" value="${esc(c.code||'')}" maxlength="20" placeholder="編號"></td>
+              <td class="city-name" data-col-key="name"><input type="text" class="inline-name-input" data-inline-field="name" value="${esc(c.name)}" maxlength="20"></td>
+              <td data-col-key="level"><input type="number" class="inline-num-input" data-inline-field="level" value="${c.level||1}" min="1" max="10" step="1"></td>
+              <td class="col-num" data-col-key="members"><input type="number" class="inline-num-input" data-inline-field="memberCount" value="${c.memberCount||0}" min="0" step="1"></td>
+              <td class="col-num" data-col-key="power">
                 <div class="inline-power-wrap">
                   <input type="number" class="inline-power-input" data-inline-field="totalPowerYi" value="${yi.toFixed(2)}" step="0.01" min="0">
                   <span class="inline-unit">億</span>
                 </div>
               </td>
-              <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="totalTeams" value="${c.totalTeams||0}" min="0" step="1"></td>
-              <td class="col-num inline-avg-preview" data-inline-preview="avgPower">—</td>
-              <td class="city-loc-cell">${renderLocationBadge(c)}</td>
-              <td class="col-actions">
+              <td class="col-num" data-col-key="teams"><input type="number" class="inline-num-input" data-inline-field="totalTeams" value="${c.totalTeams||0}" min="0" step="1"></td>
+              <td class="col-num inline-avg-preview" data-col-key="avgPower" data-inline-preview="avgPower">—</td>
+              <td class="city-loc-cell" data-col-key="location">${renderLocationBadge(c)}</td>
+              <td class="col-actions" data-col-key="actions">
                 <button class="btn btn-success btn-sm" data-action="save-city-inline" data-id="${c.id}" title="儲存">💾</button>
                 <button class="btn btn-ghost btn-sm" data-action="cancel-city-inline" data-id="${c.id}" title="取消">✕</button>
               </td>
@@ -882,20 +852,20 @@ const CityManager = (() => {
               ? `<span class="city-map-chip" title="${esc(mapName)}">🗺️ ${esc(mapName)}</span>`
               : '<span class="text-dim">—</span>';
             rowHtml = `<tr class="${c.isCapital ? 'row-self' : ''}" data-city-id="${c.id}">
-              <td><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
-              <td class="city-map-cell">${mapCell}</td>
-              <td>${zone ? esc(zone.name) : '<span class="text-dim">—</span>'}</td>
-              <td>${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
-              <td><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
-              <td class="city-code-cell">${codeChip}</td>
-              <td class="city-name">${c.isCapital ? '👑 ' : ''}${esc(c.name)}</td>
-              <td><span class="chip" style="font-size:9px;">Lv.${c.level||1}</span></td>
+              <td data-col-key="checkbox"><input type="checkbox" class="city-cb" data-id="${c.id}"></td>
+              <td class="city-map-cell" data-col-key="map">${mapCell}</td>
+              <td data-col-key="zone">${zone ? esc(zone.name) : '<span class="text-dim">—</span>'}</td>
+              <td data-col-key="alliance">${icon}${alliance ? esc(alliance.name) : '<span class="text-dim">NPC</span>'}</td>
+              <td data-col-key="side"><span class="chip ${sideClass(c.side)}" style="font-size:9px;">${sideLabel(c.side)}</span></td>
+              <td class="city-code-cell" data-col-key="code">${codeChip}</td>
+              <td class="city-name" data-col-key="name">${c.isCapital ? '👑 ' : ''}${esc(c.name)}</td>
+              <td data-col-key="level"><span class="chip" style="font-size:9px;">Lv.${c.level||1}</span></td>
               ${renderMemberCell(c, false)}
-              <td class="col-num">${formatPower(c.totalPower)}</td>
-              <td class="col-num">${c.totalTeams || '—'}</td>
-              <td class="col-num">${avgDisplay}</td>
-              <td class="city-loc-cell">${renderLocationBadge(c)}</td>
-              <td>
+              <td class="col-num" data-col-key="power">${formatPower(c.totalPower)}</td>
+              <td class="col-num" data-col-key="teams">${c.totalTeams || '—'}</td>
+              <td class="col-num" data-col-key="avgPower">${avgDisplay}</td>
+              <td class="city-loc-cell" data-col-key="location">${renderLocationBadge(c)}</td>
+              <td data-col-key="actions">
                 <button class="btn btn-primary btn-sm" data-action="edit-city" data-id="${c.id}">✏️</button>
                 <button class="btn btn-danger btn-sm" data-action="del-city" data-id="${c.id}">🗑️</button>
               </td>
@@ -911,7 +881,6 @@ const CityManager = (() => {
       }
     }
 
-    /* ── 行內編輯的即時預覽（平均戰力）── */
     if(tbody){
       tbody.querySelectorAll('tr.inline-editing').forEach(tr => {
         const teamsEl = tr.querySelector('[data-inline-field="totalTeams"]');
@@ -933,7 +902,12 @@ const CityManager = (() => {
     updateBatchBar();
     renderDistSummary();
 
-    /* 套用權限 */
+    /* ★ v9.1.0：套用 ColumnManager 偏好 */
+    const CM = getColumnManager();
+    if(CM){
+      CM.applyPrefs('cities');
+    }
+
     if(typeof window.SLG.applyPermissions === 'function'){
       window.SLG.applyPermissions();
     }
@@ -945,7 +919,6 @@ const CityManager = (() => {
   function populateFilters(){
     const state = getState();
 
-    /* 地圖下拉 */
     const mapSel = document.getElementById('cityFilterMap');
     if(mapSel){
       const cur = mapSel.value || 'active';
@@ -961,7 +934,6 @@ const CityManager = (() => {
       mapSel.value = valid.includes(cur) ? cur : 'active';
     }
 
-    /* 戰區下拉（依地圖篩選） */
     const zSel = document.getElementById('cityFilterZone');
     if(zSel){
       const cur = zSel.value;
@@ -977,7 +949,6 @@ const CityManager = (() => {
       zSel.value = cur && zones.find(z => z.id === cur) ? cur : 'all';
     }
 
-    /* 盟下拉 */
     const aSel = document.getElementById('cityFilterAlliance');
     if(aSel){
       const cur = aSel.value;
@@ -989,9 +960,7 @@ const CityManager = (() => {
     }
   }
 
-  /* ══════════════════════════════════════════════════════
-     ★ v9.0.5：批次地圖下拉填充
-     ══════════════════════════════════════════════════════ */
+  /* ★ v9.0.5：批次地圖下拉 */
   function populateBatchMapOptions(){
     const state = getState();
     const sel = document.getElementById('cityBatchMap');
@@ -1039,7 +1008,7 @@ const CityManager = (() => {
   }
 
   /* ══════════════════════════════════════════════════════
-     聯盟分佈摘要（城清單底部）
+     聯盟分佈摘要
      ══════════════════════════════════════════════════════ */
   function renderDistSummary(){
     const el = document.getElementById('allianceDistSummary');
@@ -1130,7 +1099,6 @@ const CityManager = (() => {
     };
     delete updated.tierCounts;
 
-    /* 地圖變更：若 mapId 有變 → 清舊 mapNode */
     const oldMapId = (city.mapNode && city.mapNode.mapId) || '';
     if(mapId !== oldMapId){
       delete updated.mapNode;
@@ -1138,7 +1106,6 @@ const CityManager = (() => {
 
     window.SLG.upsertEntity('city', updated);
 
-    /* 若指定了地圖但無座標 → 用 DataSyncManager 分配 */
     if(mapId && !updated.mapNode && window.SLG.DataSyncManager){
       const hash = (str) => {
         let h = 0;
@@ -1187,7 +1154,6 @@ const CityManager = (() => {
     startTierEdit,
     cancelTierEdit,
     saveTierEdit,
-    /* ★ v9.0.4 新增 */
     getCityLocationStatus,
     renderLocationBadge,
   };
@@ -1202,15 +1168,9 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-city.js 結束（v9.0.4）
- * ★ v9.0.4 變更摘要：
- *   1. 新增 getCityLocationStatus() — 定位狀態計算
- *   2. 新增 renderLocationBadge() — 定位徽章渲染
- *   3. 表格新增「📍 定位」欄位（td）
- *   4. 卡片新增定位徽章
- *   5. 篩選器支援 cityFilterLoc
- *   6. colspan 13 → 14
- *   7. 表格空資料提示更新
- *   8. 行內編輯新增定位 cell
- *   9. 分級編輯 colspan 13 → 14
+ * ui-city.js 結束（v9.1.0）
+ * ★ v9.1.0 變更摘要：
+ *   1. 所有 <td> 加 data-col-key（對應表頭）
+ *   2. render() 結尾呼叫 ColumnManager.applyPrefs('cities')
+ *   3. 保留 v9.0.4 功能（定位狀態、批次地圖等）
  * ========================================================================== */

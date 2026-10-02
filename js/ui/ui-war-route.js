@@ -1,11 +1,15 @@
 /* ============================================================================
- * js/ui/ui-war-route.js — v9.0.0（拆分自 ui.js 6-3 段前半）
+ * js/ui/ui-war-route.js — v9.1.0
  * 內容：
  *   ① WarManager   — 宣戰清單
  *   ② DeployInstr  — 出兵清單
  *   ③ RouteManager — 地圖路線管理
  *
- * 依賴：window.SLG（core.js）+ DOM
+ * ★ v9.1.0 變更：
+ *   - 宣戰 / 出兵清單：所有 <th> / <td> 加 data-col-key
+ *   - render() 呼叫 ColumnManager.applyPrefs('war' / 'deploy')
+ *
+ * 依賴：window.SLG（core.js + ui-core.js）+ DOM
  * ========================================================================== */
 (function(){
 'use strict';
@@ -21,6 +25,7 @@ const hhmmToMinutes = (h) => window.SLG.hhmmToMinutes(h);
 const getCityMapId = (c) => window.SLG.getCityMapId(c);
 const ATTACK_RULES = () => window.SLG.ATTACK_RULES;
 const PERCENT_OPTIONS = () => window.SLG.PERCENT_OPTIONS;
+const getColumnManager = () => window.SLG.ColumnManager;
 
 /* ============================================================
    ① WarManager — 宣戰清單
@@ -116,7 +121,6 @@ const WarManager = (() => {
     return (srcCity.zoneId || '') === (tgtCity.zoneId || '');
   }
 
-  /* v8.9.9：跨圖檢查 */
   function isSameMapAsSource(srcCity, tgtCity){
     if(!getState().settings.warRequireSameMap) return true;
     const ma = getCityMapId ? getCityMapId(srcCity) : '';
@@ -149,6 +153,8 @@ const WarManager = (() => {
       if(!src) return [];
       const srcAllianceId = src.allianceId || '';
       if(!srcAllianceId) return [];
+      /* ★ v9.0.6：讀取「協防需要路線接觸」開關 */
+      const requireRoute = state.settings.assistRequireRoute !== false;
       return state.cities.filter(c => {
         if(c.id === srcCityId) return false;
         if((c.allianceId || '') !== srcAllianceId) return false;
@@ -156,7 +162,7 @@ const WarManager = (() => {
         if(alliance && alliance.name === 'NPC') return false;
         if(!isSameZoneAsSource(src, c)) return false;
         if(!isSameMapAsSource(src, c)) return false;
-        if(!window.SLG.findRoute(srcCityId, c.id)) return false;
+        if(requireRoute && !window.SLG.findRoute(srcCityId, c.id)) return false;
         return true;
       });
     }
@@ -233,13 +239,40 @@ const WarManager = (() => {
     if(targets.length === 0){
       tgtSel.innerHTML = '<option value="">（無可用目標城）</option>';
       if(hintEl){
+        const src = state.cities.find(c => c.id === srcId);
         let hint = '';
         if(type === 'attack'){
           hint = state.settings.crossZoneWarAllowed ? '⚠️ 無可進攻目標城' : '⚠️ 無可進攻目標城（限同戰區）';
           if(state.settings.warRequireSameMap) hint += '（限同地圖）';
+          if(state.settings.attackRequireRoute) hint += '（需路線接觸）';
         } else {
-          hint = state.settings.crossZoneWarAllowed ? '⚠️ 無可協防目標城' : '⚠️ 無可協防目標城（限同戰區）';
-          if(state.settings.warRequireSameMap) hint += '（限同地圖）';
+          const srcAllianceId = src?.allianceId || '';
+          const sameAllianceCities = state.cities.filter(c =>
+            c.id !== srcId && (c.allianceId || '') === srcAllianceId
+          );
+          const sameZoneCities = sameAllianceCities.filter(c =>
+            state.settings.crossZoneWarAllowed || ((src?.zoneId || '') === (c.zoneId || ''))
+          );
+
+          if(!srcAllianceId){
+            hint = '⚠️ 出兵城無所屬盟，無法協防';
+          } else if(sameAllianceCities.length === 0){
+            hint = '⚠️ 此盟沒有其他城池可以協防';
+          } else if(sameZoneCities.length === 0){
+            hint = '⚠️ 無同戰區的同盟城池（可至參數設定開啟「允許跨戰區宣戰」）';
+          } else {
+            const requireRoute = state.settings.assistRequireRoute !== false;
+            if(requireRoute){
+              const withRoute = sameZoneCities.filter(c => window.SLG.findRoute(srcId, c.id));
+              if(withRoute.length === 0){
+                hint = '⚠️ 同戰區同盟城池都無路線接觸\n（可至參數設定關閉「協防需要路線接觸」）';
+              } else {
+                hint = '⚠️ 無可協防目標城（限同地圖）';
+              }
+            } else {
+              hint = '⚠️ 無可協防目標城（可能限制同地圖）';
+            }
+          }
         }
         hintEl.textContent = hint;
       }
@@ -348,7 +381,6 @@ const WarManager = (() => {
     return copy;
   }
 
-  /* v8.9.9：加 map 分組 */
   function groupLines(lines, groupBy){
     const state = getState();
     if(groupBy === 'none') return [{ key: '__all__', title: '', items: lines }];
@@ -388,6 +420,18 @@ const WarManager = (() => {
     return arr;
   }
 
+  /* ★ v9.1.0：thead 加 data-col-key */
+  function getTheadHtml(){
+    return `<thead><tr>
+      <th style="width:80px;" data-col-key="startTime">開始時間</th>
+      <th style="width:80px;" data-col-key="endTime">結束時間</th>
+      <th data-col-key="src">出兵城</th>
+      <th style="width:100px;" data-col-key="type">類型</th>
+      <th data-col-key="tgt">目標城</th>
+      <th style="width:50px;" data-col-key="actions">操作</th>
+    </tr></thead>`;
+  }
+
   function render(){
     const state = getState();
     const container = document.getElementById('warListContainer');
@@ -405,15 +449,7 @@ const WarManager = (() => {
       const sorted = sortLines(lines, getSortPref());
       const grouped = groupLines(sorted, getGroupPref());
       const limitMin = state.settings.timeLimitMin || 120;
-
-      const theadHtml = `<thead><tr>
-        <th style="width:80px;">開始時間</th>
-        <th style="width:80px;">結束時間</th>
-        <th>出兵城</th>
-        <th style="width:100px;">類型</th>
-        <th>目標城</th>
-        <th style="width:50px;">操作</th>
-      </tr></thead>`;
+      const theadHtml = getTheadHtml();
 
       const renderRow = (l, idx) => {
         const src = state.cities.find(c => c.id === l.srcId);
@@ -480,18 +516,18 @@ const WarManager = (() => {
         const tgtCell = `<select class="inline-select" data-war-tgt="1" data-idx="${idx}">${tgtOpts}</select>`;
 
         return `<tr class="${rowPending ? 'row-pending' : ''}" data-war-row="${idx}">
-          <td>${timeCell}</td>
-          <td>${endCell}</td>
-          <td>${srcCell}</td>
-          <td><select class="inline-select col-type ${isAttack ? 'attack' : 'assist'}" data-war-type="1" data-idx="${idx}">${typeOpts}</select></td>
-          <td>${tgtCell}</td>
-          <td class="col-del"><button class="btn btn-danger btn-sm" data-war-del="1" data-idx="${idx}">🗑️</button></td>
+          <td data-col-key="startTime">${timeCell}</td>
+          <td data-col-key="endTime">${endCell}</td>
+          <td data-col-key="src">${srcCell}</td>
+          <td data-col-key="type"><select class="inline-select col-type ${isAttack ? 'attack' : 'assist'}" data-war-type="1" data-idx="${idx}">${typeOpts}</select></td>
+          <td data-col-key="tgt">${tgtCell}</td>
+          <td class="col-del" data-col-key="actions"><button class="btn btn-danger btn-sm" data-war-del="1" data-idx="${idx}">🗑️</button></td>
         </tr>`;
       };
 
       let html = '';
       if(getGroupPref() === 'none'){
-        html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
+        html = `<table class="list-table" data-col-table="war">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
       } else {
         let idxCounter = 0;
         html = grouped.map(g => {
@@ -503,14 +539,13 @@ const WarManager = (() => {
               <span class="group-count">${g.items.length} 條</span>
             </div>
             <div class="list-group-body">
-              <table class="list-table">${theadHtml}<tbody>${rows}</tbody></table>
+              <table class="list-table" data-col-table="war">${theadHtml}<tbody>${rows}</tbody></table>
             </div>
           </div>`;
         }).join('');
       }
       container.innerHTML = html;
 
-      /* 分組摺疊 */
       container.querySelectorAll('.list-group-header').forEach(h => {
         h.addEventListener('click', () => {
           const group = h.closest('.list-group');
@@ -522,6 +557,10 @@ const WarManager = (() => {
     }
 
     renderAddForm();
+
+    /* ★ v9.1.0：套用 ColumnManager 偏好 */
+    const CM = getColumnManager();
+    if(CM) CM.applyPrefs('war');
   }
 
   function bindWarRowEvents(container, sortedLines){
@@ -797,7 +836,6 @@ const DeployInstr = (() => {
     return copy;
   }
 
-  /* v8.9.9：加 map 分組 */
   function groupLines(lines, groupBy){
     const state = getState();
     if(groupBy === 'none') return [{ key: '__all__', title: '', items: lines }];
@@ -833,6 +871,20 @@ const DeployInstr = (() => {
     return arr;
   }
 
+  /* ★ v9.1.0：thead 加 data-col-key */
+  function getTheadHtml(){
+    return `<thead><tr>
+      <th style="width:80px;" data-col-key="startTime">開始時間</th>
+      <th style="width:80px;" data-col-key="endTime">結束時間</th>
+      <th data-col-key="src">出兵城</th>
+      <th style="width:90px;" data-col-key="type">行動</th>
+      <th data-col-key="tgt">目標城</th>
+      <th style="width:70px;" data-col-key="pre">戰前%</th>
+      <th style="width:70px;" data-col-key="post">復活%</th>
+      <th style="width:60px;" data-col-key="priority">順序</th>
+    </tr></thead>`;
+  }
+
   function render(){
     const state = getState();
     const container = document.getElementById('deployListContainer');
@@ -846,23 +898,16 @@ const DeployInstr = (() => {
     const lines = getAllDeployLines();
     if(lines.length === 0){
       container.innerHTML = '<div class="list-container-empty">尚無出兵指示。請先在「⚔️ 宣戰」建立宣戰路線。</div>';
+      /* 仍要套用偏好（表頭可能由 UI 動態產生） */
+      const CM = getColumnManager();
+      if(CM) CM.applyPrefs('deploy');
       return;
     }
 
     const sorted = sortLines(lines, getSortPref());
     const grouped = groupLines(sorted, getGroupPref());
     const limitMin = state.settings.timeLimitMin || 120;
-
-    const theadHtml = `<thead><tr>
-      <th style="width:80px;">開始時間</th>
-      <th style="width:80px;">結束時間</th>
-      <th>出兵城</th>
-      <th style="width:90px;">行動</th>
-      <th>目標城</th>
-      <th style="width:70px;">戰前%</th>
-      <th style="width:70px;">復活%</th>
-      <th style="width:60px;">順序</th>
-    </tr></thead>`;
+    const theadHtml = getTheadHtml();
 
     const renderRow = (l, idx) => {
       const src = state.cities.find(c => c.id === l.srcId);
@@ -899,20 +944,20 @@ const DeployInstr = (() => {
       const tgtCodeStr = tgt && tgt.code ? ` [${tgt.code}]` : '';
 
       return `<tr data-deploy-row="${idx}">
-        <td><span class="col-time start">${esc(startTime)}</span></td>
-        <td><span class="col-time end">${esc(endTime)}</span></td>
-        <td class="col-city">${srcIcon}${src ? esc(src.name) + srcCodeStr : '—'}</td>
-        <td><span class="col-type ${isAttack ? 'attack' : 'assist'}">${isAttack ? '⚔️ 進攻' : '🤝 協防'}</span></td>
-        <td class="col-city">${tgtIcon}${tgt ? esc(tgt.name) + tgtCodeStr : '—'}</td>
-        <td><select class="inline-select col-num" data-deploy-field="preWarPercent" data-idx="${idx}">${preOpts}</select></td>
-        <td><select class="inline-select col-num" data-deploy-field="postRevivePercent" data-idx="${idx}">${postOpts}</select></td>
-        <td><input type="number" class="inline-number" data-deploy-field="priority" data-idx="${idx}" value="${l.priority || 1}" min="1" max="99" step="1"></td>
+        <td data-col-key="startTime"><span class="col-time start">${esc(startTime)}</span></td>
+        <td data-col-key="endTime"><span class="col-time end">${esc(endTime)}</span></td>
+        <td class="col-city" data-col-key="src">${srcIcon}${src ? esc(src.name) + srcCodeStr : '—'}</td>
+        <td data-col-key="type"><span class="col-type ${isAttack ? 'attack' : 'assist'}">${isAttack ? '⚔️ 進攻' : '🤝 協防'}</span></td>
+        <td class="col-city" data-col-key="tgt">${tgtIcon}${tgt ? esc(tgt.name) + tgtCodeStr : '—'}</td>
+        <td data-col-key="pre"><select class="inline-select col-num" data-deploy-field="preWarPercent" data-idx="${idx}">${preOpts}</select></td>
+        <td data-col-key="post"><select class="inline-select col-num" data-deploy-field="postRevivePercent" data-idx="${idx}">${postOpts}</select></td>
+        <td data-col-key="priority"><input type="number" class="inline-number" data-deploy-field="priority" data-idx="${idx}" value="${l.priority || 1}" min="1" max="99" step="1"></td>
       </tr>`;
     };
 
     let html = '';
     if(getGroupPref() === 'none'){
-      html = `<table class="list-table">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
+      html = `<table class="list-table" data-col-table="deploy">${theadHtml}<tbody>${sorted.map((l, i) => renderRow(l, i)).join('')}</tbody></table>`;
     } else {
       let idxCounter = 0;
       html = grouped.map(g => {
@@ -924,14 +969,13 @@ const DeployInstr = (() => {
             <span class="group-count">${g.items.length} 條</span>
           </div>
           <div class="list-group-body">
-            <table class="list-table">${theadHtml}<tbody>${rows}</tbody></table>
+            <table class="list-table" data-col-table="deploy">${theadHtml}<tbody>${rows}</tbody></table>
           </div>
         </div>`;
       }).join('');
     }
     container.innerHTML = html;
 
-    /* 分組摺疊 */
     container.querySelectorAll('.list-group-header').forEach(h => {
       h.addEventListener('click', () => {
         const group = h.closest('.list-group');
@@ -940,6 +984,10 @@ const DeployInstr = (() => {
     });
 
     bindDeployRowEvents(container, sorted);
+
+    /* ★ v9.1.0：套用 ColumnManager 偏好 */
+    const CM = getColumnManager();
+    if(CM) CM.applyPrefs('deploy');
   }
 
   function bindDeployRowEvents(container, sortedLines){
@@ -979,7 +1027,6 @@ const DeployInstr = (() => {
 const RouteManager = (() => {
   let editingRouteId = null;
 
-  /* v8.9.9：檢查兩城是否同圖 */
   function canAddRoute(aId, bId){
     const state = getState();
     if(!state.settings.routeRequireSameMap) return { ok: true };
@@ -1087,7 +1134,6 @@ const RouteManager = (() => {
           return;
         }
 
-        /* v8.9.9：跨圖檢查 */
         const check = canAddRoute(srcId, tgtId);
         if(!check.ok){
           alert('⚠️ ' + check.msg);
@@ -1132,7 +1178,6 @@ const RouteManager = (() => {
     if(aId === bId){ alert('兩城池不可相同'); return; }
     if(window.SLG.findRoute(aId, bId)){ alert('此路線已存在'); return; }
 
-    /* v8.9.9：跨圖檢查 */
     const check = canAddRoute(aId, bId);
     if(!check.ok){ alert('⚠️ ' + check.msg); return; }
 
@@ -1154,7 +1199,6 @@ const RouteManager = (() => {
       for(let j = i + 1; j < cities.length; j++){
         const a = cities[i], b = cities[j];
         if(!window.SLG.findRoute(a.id, b.id)){
-          /* v8.9.9：跨圖檢查 */
           const check = canAddRoute(a.id, b.id);
           if(!check.ok) continue;
           const r = window.SLG.addRoute(a.id, b.id);
@@ -1303,7 +1347,6 @@ const RouteManager = (() => {
     const existing = window.SLG.findRoute(aId, bId);
     if(existing && existing.id !== editingRouteId){ alert('此路線已存在'); return; }
 
-    /* v8.9.9：跨圖檢查 */
     const check = canAddRoute(aId, bId);
     if(!check.ok){ alert('⚠️ ' + check.msg); return; }
 
@@ -1352,5 +1395,10 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-war-route.js 結束（v9.0.0）
+ * ui-war-route.js 結束（v9.1.0）
+ * ★ v9.1.0 變更摘要：
+ *   1. 宣戰清單：<th> / <td> 加 data-col-key
+ *   2. 出兵清單：<th> / <td> 加 data-col-key
+ *   3. render() 呼叫 ColumnManager.applyPrefs('war' / 'deploy')
+ *   4. 保留 v9.0.6 協防路線開關功能
  * ========================================================================== */

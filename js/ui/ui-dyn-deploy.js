@@ -29,11 +29,17 @@ const computeAllocation = (c) => window.SLG.computeAllocation(c);
 const DYN = (() => {
   let allRows = [];
 
-  function setRows(rows){
-    allRows = rows || [];
-    renderSummary();
-    renderTable();
+function setRows(rows){
+  allRows = rows || [];
+  renderSummary();
+  renderTable();
+
+  /* ★ v9.1.0：即使資料為空，也套用 ColumnManager 偏好（保持欄位設定）*/
+  const CM = window.SLG.ColumnManager;
+  if(CM) {
+    setTimeout(() => CM.applyPrefs('dyn'), 0);
   }
+}
 
   function renderSummary(){
     const el = document.getElementById('dynSummary');
@@ -101,27 +107,31 @@ const DYN = (() => {
       return;
     }
 
-    tbody.innerHTML = rows.map(r => {
-      const timeStr = (granSec === 30)
-        ? formatFullTime(r.sec)
-        : minutesToHHMM((state.simBaseMin || 0) + Math.floor(r.sec / 60));
-      const actTxt = r.isAttack ? '⚔️ 進攻' : '🛡️ 協防';
-      const wallDisplay = r.tgtFallen ? '🏳️ 城已破' : (r.wallSec / 60).toFixed(1) + ' 分';
-      const consumeDisplay = ((r.consumeThisMin||0) * (granSec === 30 ? 0.5 : 1)).toFixed(1);
-      return `<tr>
-        <td class="time-cell">${esc(timeStr)}</td>
-        <td class="atk-cell">${esc(r.srcCity)}城(${sideLabel(r.srcSide)})</td>
-        <td class="${r.isAttack ? 'atk' : 'def'}">${actTxt}</td>
-        <td class="def-cell">${esc(r.tgtCity)}城(${sideLabel(r.tgtSide)})</td>
-        <td class="consumed">${consumeDisplay}</td>
-        <td class="num-stay">${r.ownRemain}</td>
-        <td class="num-cd">${r.ownCd} + ${r.ownMarch}</td>
-        <td class="num-stay">${r.tgtRemain}</td>
-        <td class="num-cd">${r.tgtCd} + ${r.tgtMarch}</td>
-        <td>${wallDisplay}</td>
-      </tr>`;
-    }).join('');
-  }
+  tbody.innerHTML = rows.map(r => {
+    const timeStr = (granSec === 30)
+      ? formatFullTime(r.sec)
+      : minutesToHHMM((state.simBaseMin || 0) + Math.floor(r.sec / 60));
+    const actTxt = r.isAttack ? '⚔️ 進攻' : '🛡️ 協防';
+    const wallDisplay = r.tgtFallen ? '🏳️ 城已破' : (r.wallSec / 60).toFixed(1) + ' 分';
+    const consumeDisplay = ((r.consumeThisMin||0) * (granSec === 30 ? 0.5 : 1)).toFixed(1);
+    return `<tr>
+      <td class="time-cell" data-col-key="time">${esc(timeStr)}</td>
+      <td class="atk-cell" data-col-key="src">${esc(r.srcCity)}城(${sideLabel(r.srcSide)})</td>
+      <td class="${r.isAttack ? 'atk' : 'def'}" data-col-key="action">${actTxt}</td>
+      <td class="def-cell" data-col-key="tgt">${esc(r.tgtCity)}城(${sideLabel(r.tgtSide)})</td>
+      <td class="consumed" data-col-key="consume">${consumeDisplay}</td>
+      <td class="num-stay" data-col-key="srcRemain">${r.ownRemain}</td>
+      <td class="num-cd" data-col-key="srcCd">${r.ownCd} + ${r.ownMarch}</td>
+      <td class="num-stay" data-col-key="tgtRemain">${r.tgtRemain}</td>
+      <td class="num-cd" data-col-key="tgtCd">${r.tgtCd} + ${r.tgtMarch}</td>
+      <td data-col-key="wall">${wallDisplay}</td>
+    </tr>`;
+  }).join('');
+
+  /* ★ v9.1.0：套用 ColumnManager 偏好 */
+  const CM = window.SLG.ColumnManager;
+  if(CM) CM.applyPrefs('dyn');
+}
 
   function populateCityFilters(){
     const state = getState();

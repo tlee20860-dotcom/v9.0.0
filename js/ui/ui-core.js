@@ -1,17 +1,15 @@
 /* ============================================================================
- * js/ui/ui-core.js — v9.0.2
+ * js/ui/ui-core.js — v9.1.0
  * 內容：
  *   ① renderSyncStatus — 同步狀態渲染
  *   ② viz            — 態勢圖 / 動態圖 / Canvas 快照
- *   ③ R              — 渲染模組（健康 / 房主 / 成員 / 除錯 / 盟 / 矩陣 /
- *                       戰區 / 城池 / 戰報 / 聊天 / 進度 / 總渲染）
- *   ④ AllianceColorPicker — 盟色選擇器（v9.0.2 從 ui-map.js 移入）
- *   ⑤ AllianceColorModal  — 盟色對照表 Modal（v9.0.2 從 main.js 移入）
+ *   ③ ColumnManager  — 表格欄位摺疊管理器（★ v9.1.0 新增）
+ *   ④ R              — 渲染模組（健康 / 房主 / 成員 / 盟 / 矩陣 / 戰區 / 城池 / …）
+ *   ⑤ 盟色選擇器
+ *   ⑥ 盟色對照表 Modal
  *
- * ★ v9.0.2 變更：
- *   - 新增 buildAllianceColorPicker()（從 ui-map.js 移入）
- *   - 新增 renderAllianceColorList()（從 main.js 移入）
- *   - 新增 openAllianceColorModal()
+ * ★ v9.1.0 新增：
+ *   - ColumnManager 模組（5 個表格的欄位顯示/隱藏管理）
  *
  * 依賴：window.SLG（core.js）+ DOM
  * ========================================================================== */
@@ -20,7 +18,7 @@
 
 window.SLG = window.SLG || {};
 
-/* ── 從全域取得（core.js 提供）── */
+/* ── 從全域取得 ── */
 const getState = () => window.SLG.state;
 const getEmit = () => window.SLG.emit;
 const getOn = () => window.SLG.on;
@@ -71,7 +69,6 @@ function renderSyncStatus(){
     return;
   }
 
-  /* 共享沙盤模式：顯示模式徽章 */
   if(sandboxMode === 'shared'){
     const sharedName = getState().activeSharedSandboxName || '共享沙盤';
     const sharedVer = getState().sharedSandboxVersion || 0;
@@ -478,7 +475,416 @@ const viz = (() => {
 })();
 
 /* ============================================================
-   ③ R — 渲染模組
+   ③ ★ v9.1.0 新增：ColumnManager — 表格欄位摺疊管理器
+   ============================================================ */
+const ColumnManager = (() => {
+  /* 已註冊的表格：{ tableId: { columns, prefs, panelEl, btnEl } } */
+  const registry = new Map();
+
+  /* 預設手機建議的欄位（每個表格不同） */
+  const MOBILE_SUGGEST = {
+    alliances: ['name', 'members', 'power', 'actions'],
+    cities:    ['name', 'members', 'teams', 'location', 'actions'],
+    war:       ['src', 'type', 'tgt', 'actions'],
+    deploy:    ['src', 'tgt', 'pre', 'priority'],
+    dyn:       ['time', 'src', 'tgt', 'wall'],
+  };
+
+  /* ══════════════════════════════════════════════════════
+     儲存 / 載入偏好
+     ══════════════════════════════════════════════════════ */
+  function storageKey(tableId){
+    return `slg_col_prefs_${tableId}`;
+  }
+
+  function loadPrefs(tableId, columns){
+    try{
+      const raw = localStorage.getItem(storageKey(tableId));
+      if(raw){
+        const parsed = JSON.parse(raw);
+        if(parsed && parsed.version === 1 && parsed.visible){
+          /* 合併：保留已存在的，移除已不存在的，加入新的（預設顯示）*/
+          const result = {};
+          for(const col of columns){
+            if(col.fixed){
+              result[col.key] = true;
+            } else if(typeof parsed.visible[col.key] === 'boolean'){
+              result[col.key] = parsed.visible[col.key];
+            } else {
+              result[col.key] = true;
+            }
+          }
+          return result;
+        }
+      }
+    }catch(e){ console.warn('[ColumnManager] 讀取偏好失敗', e); }
+
+    /* 預設：全部顯示 */
+    const result = {};
+    for(const col of columns) result[col.key] = true;
+    return result;
+  }
+
+  function savePrefs(tableId){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+    try{
+      localStorage.setItem(storageKey(tableId), JSON.stringify({
+        version: 1,
+        visible: entry.prefs,
+        updatedAt: Date.now(),
+      }));
+    }catch(e){ console.warn('[ColumnManager] 儲存偏好失敗', e); }
+  }
+
+  /* ══════════════════════════════════════════════════════
+     註冊表格
+     ══════════════════════════════════════════════════════ */
+  function register(tableId, columns, opts = {}){
+    /* 若已註冊 → 只更新 columns 與 prefs */
+    let entry = registry.get(tableId);
+    if(!entry){
+      entry = {
+        tableId,
+        columns,
+        prefs: loadPrefs(tableId, columns),
+        btnEl: null,
+        panelEl: null,
+      };
+      registry.set(tableId, entry);
+    } else {
+      entry.columns = columns;
+      /* 保留已存的 prefs，補上新的欄位 */
+      for(const col of columns){
+        if(typeof entry.prefs[col.key] !== 'boolean'){
+          entry.prefs[col.key] = true;
+        }
+      }
+    }
+
+    /* 若 opts.autoApply → 立即套用 */
+    if(opts.autoApply !== false){
+      setTimeout(() => applyPrefs(tableId), 0);
+    }
+    return entry;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     套用偏好到表格（顯示 / 隱藏欄位）
+     ══════════════════════════════════════════════════════ */
+  function applyPrefs(tableId){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+
+    const table = document.querySelector(`[data-col-table="${tableId}"]`);
+    if(!table) return;
+
+    /* 對每個 th / td 處理 */
+    const allCells = table.querySelectorAll('th[data-col-key], td[data-col-key]');
+    allCells.forEach(cell => {
+      const key = cell.dataset.colKey;
+      if(!key) return;
+      const visible = entry.prefs[key] !== false;
+      cell.classList.toggle('col-hidden', !visible);
+    });
+
+    /* 更新按鈕計數 */
+    updateBtnCount(tableId);
+
+    /* 標記表格有隱藏欄位 */
+    table.dataset.colHidden = Object.values(entry.prefs).some(v => !v) ? '1' : '';
+  }
+
+  /* ══════════════════════════════════════════════════════
+     切換單一欄位
+     ══════════════════════════════════════════════════════ */
+  function toggle(tableId, colKey){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+    const col = entry.columns.find(c => c.key === colKey);
+    if(!col || col.fixed) return;    /* 固定欄位不可切換 */
+
+    entry.prefs[colKey] = !entry.prefs[colKey];
+    savePrefs(tableId);
+    applyPrefs(tableId);
+    renderPanel(tableId);    /* 重繪面板（更新勾選狀態） */
+  }
+
+  /* ══════════════════════════════════════════════════════
+     全部顯示 / 隱藏
+     ══════════════════════════════════════════════════════ */
+  function showAll(tableId){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+    for(const col of entry.columns){
+      entry.prefs[col.key] = true;
+    }
+    savePrefs(tableId);
+    applyPrefs(tableId);
+    renderPanel(tableId);
+  }
+
+  function hideAll(tableId){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+    for(const col of entry.columns){
+      if(!col.fixed) entry.prefs[col.key] = false;
+    }
+    savePrefs(tableId);
+    applyPrefs(tableId);
+    renderPanel(tableId);
+  }
+
+  /* ══════════════════════════════════════════════════════
+     手機建議
+     ══════════════════════════════════════════════════════ */
+  function applyMobileSuggested(tableId){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+    const suggested = MOBILE_SUGGEST[tableId] || [];
+    for(const col of entry.columns){
+      if(col.fixed){
+        entry.prefs[col.key] = true;
+      } else {
+        entry.prefs[col.key] = suggested.includes(col.key);
+      }
+    }
+    savePrefs(tableId);
+    applyPrefs(tableId);
+    renderPanel(tableId);
+    logSystem(`📱 已套用「${tableId}」手機建議欄位`);
+  }
+
+  /* ══════════════════════════════════════════════════════
+     重置為預設（全部顯示）
+     ══════════════════════════════════════════════════════ */
+  function resetDefaults(tableId){
+    const entry = registry.get(tableId);
+    if(!entry) return;
+    for(const col of entry.columns){
+      entry.prefs[col.key] = true;
+    }
+    savePrefs(tableId);
+    applyPrefs(tableId);
+    renderPanel(tableId);
+    logSystem(`🔄 已重置「${tableId}」欄位偏好`);
+  }
+
+  /* ══════════════════════════════════════════════════════
+     渲染按鈕計數
+     ══════════════════════════════════════════════════════ */
+  function updateBtnCount(tableId){
+    const entry = registry.get(tableId);
+    if(!entry || !entry.btnEl) return;
+    const total = entry.columns.length;
+    const visible = Object.values(entry.prefs).filter(v => v).length;
+    const countEl = entry.btnEl.querySelector('.col-count');
+    if(countEl) countEl.textContent = `${visible}/${total}`;
+    entry.btnEl.classList.toggle('has-hidden', visible < total);
+  }
+
+  /* ══════════════════════════════════════════════════════
+     渲染面板（下拉選單）
+     ══════════════════════════════════════════════════════ */
+  function renderPanel(tableId){
+    const entry = registry.get(tableId);
+    if(!entry || !entry.panelEl) return;
+
+    const listEl = entry.panelEl.querySelector('.col-mgr-list');
+    if(!listEl) return;
+
+    listEl.innerHTML = entry.columns.map(col => {
+      const isFixed = !!col.fixed;
+      const checked = entry.prefs[col.key] !== false;
+      const label = col.label || '（無標題）';
+      return `<label class="col-mgr-item ${isFixed ? 'locked' : ''}" data-col="${esc(col.key)}">
+        <input type="checkbox" data-col-toggle="${esc(col.key)}" ${checked ? 'checked' : ''} ${isFixed ? 'disabled' : ''}>
+        <span>${esc(label)}</span>
+      </label>`;
+    }).join('');
+
+    /* 綁定 checkbox 事件 */
+    listEl.querySelectorAll('input[data-col-toggle]').forEach(cb => {
+      if(cb.dataset.bound) return;
+      cb.dataset.bound = '1';
+      cb.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const key = cb.dataset.colToggle;
+        toggle(tableId, key);
+      });
+      /* 阻止 label 預設行為（避免雙重觸發）*/
+      cb.addEventListener('click', (e) => e.stopPropagation());
+    });
+
+    /* 綁定 label 點擊（避免點 label 觸發 checkbox 兩次）*/
+    listEl.querySelectorAll('.col-mgr-item.locked').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════
+     建立 UI（按鈕 + 面板）
+     ══════════════════════════════════════════════════════ */
+  function buildUI(tableId, containerEl){
+    const entry = registry.get(tableId);
+    if(!entry || !containerEl) return;
+
+    /* 若已存在 → 不重建 */
+    if(entry.btnEl && entry.btnEl.parentNode) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'col-mgr-wrap';
+    wrap.dataset.colWrap = tableId;
+
+    /* 按鈕 */
+    const btn = document.createElement('button');
+    btn.className = 'col-mgr-btn';
+    btn.dataset.table = tableId;
+    btn.title = '顯示 / 隱藏表格欄位';
+    btn.innerHTML = `⚙️ 欄位 <span class="col-count">0/0</span>`;
+    wrap.appendChild(btn);
+
+    /* 面板 */
+    const panel = document.createElement('div');
+    panel.className = 'col-mgr-panel hidden';
+    panel.dataset.colPanel = tableId;
+    panel.innerHTML = `
+      <div class="col-mgr-header">
+        <span>📋 顯示欄位</span>
+        <button class="col-mgr-close" data-col-close="${esc(tableId)}">✕</button>
+      </div>
+      <div class="col-mgr-list"></div>
+      <div class="col-mgr-actions">
+        <button data-col-action="all" data-table="${esc(tableId)}">全部顯示</button>
+        <button data-col-action="none" data-table="${esc(tableId)}">全部隱藏</button>
+        <button class="mobile-suggest" data-col-action="mobile" data-table="${esc(tableId)}">📱 手機建議</button>
+        <button data-col-action="reset" data-table="${esc(tableId)}">🔄 重置</button>
+      </div>
+    `;
+    wrap.appendChild(panel);
+
+    containerEl.appendChild(wrap);
+
+    entry.btnEl = btn;
+    entry.panelEl = panel;
+
+    /* 綁定按鈕 */
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      togglePanel(tableId);
+    });
+
+    /* 綁定關閉 */
+    panel.querySelector('[data-col-close]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      closePanel(tableId);
+    });
+
+    /* 綁定動作按鈕 */
+    panel.querySelectorAll('[data-col-action]').forEach(b => {
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = b.dataset.colAction;
+        if(action === 'all') showAll(tableId);
+        else if(action === 'none') hideAll(tableId);
+        else if(action === 'mobile') applyMobileSuggested(tableId);
+        else if(action === 'reset') resetDefaults(tableId);
+      });
+    });
+
+    /* 面板內部點擊不關閉 */
+    panel.addEventListener('click', (e) => e.stopPropagation());
+
+    /* 渲染初始面板 */
+    renderPanel(tableId);
+    updateBtnCount(tableId);
+  }
+
+  /* ══════════════════════════════════════════════════════
+     面板開關
+     ══════════════════════════════════════════════════════ */
+  function togglePanel(tableId){
+    const entry = registry.get(tableId);
+    if(!entry || !entry.panelEl) return;
+    const isOpen = !entry.panelEl.classList.contains('hidden');
+
+    /* 先關閉所有其他面板 */
+    closeAllPanels();
+
+    if(!isOpen){
+      openPanel(tableId);
+    }
+  }
+
+  function openPanel(tableId){
+    const entry = registry.get(tableId);
+    if(!entry || !entry.panelEl) return;
+    renderPanel(tableId);
+    entry.panelEl.classList.remove('hidden');
+    if(entry.btnEl) entry.btnEl.classList.add('active');
+  }
+
+  function closePanel(tableId){
+    const entry = registry.get(tableId);
+    if(!entry || !entry.panelEl) return;
+    entry.panelEl.classList.add('hidden');
+    if(entry.btnEl) entry.btnEl.classList.remove('active');
+  }
+
+  function closeAllPanels(){
+    for(const [tableId, entry] of registry.entries()){
+      if(entry.panelEl) entry.panelEl.classList.add('hidden');
+      if(entry.btnEl) entry.btnEl.classList.remove('active');
+    }
+  }
+
+  /* 點擊外部 / Esc 關閉 */
+  if(!window.__colMgrGlobalBound){
+    window.__colMgrGlobalBound = true;
+    document.addEventListener('click', (e) => {
+      /* 若點擊不在任何面板或按鈕內 → 關閉所有面板 */
+      const inPanel = e.target.closest('.col-mgr-panel');
+      const inBtn = e.target.closest('.col-mgr-btn');
+      if(inPanel || inBtn) return;
+      closeAllPanels();
+    });
+    document.addEventListener('keydown', (e) => {
+      if(e.key === 'Escape') closeAllPanels();
+    });
+  }
+
+  /* ══════════════════════════════════════════════════════
+     對外 API
+     ══════════════════════════════════════════════════════ */
+  return {
+    register,
+    applyPrefs,
+    toggle,
+    showAll,
+    hideAll,
+    applyMobileSuggested,
+    resetDefaults,
+    buildUI,
+    renderPanel,
+    closeAllPanels,
+    /* 查詢 */
+    getPrefs: (tableId) => {
+      const entry = registry.get(tableId);
+      return entry ? { ...entry.prefs } : {};
+    },
+    isVisible: (tableId, colKey) => {
+      const entry = registry.get(tableId);
+      return entry ? entry.prefs[colKey] !== false : true;
+    },
+    MOBILE_SUGGEST,
+  };
+})();
+
+/* ============================================================
+   ④ R — 渲染模組
    ============================================================ */
 const R = (() => {
   let editingAllianceRowId = null;
@@ -558,23 +964,23 @@ const R = (() => {
           `<option value="${s}" ${s === a.side ? 'selected' : ''}>${allianceSideLabel(s)}</option>`
         ).join('');
         return `<tr data-alliance-id="${a.id}" data-idx="${idx}" class="inline-editing">
-          <td class="drag-handle" title="拖曳排序">⠿</td>
-          <td class="col-name">
+          <td class="drag-handle" data-col-key="drag" title="拖曳排序">⠿</td>
+          <td class="col-name" data-col-key="name">
             <div class="inline-icon-name">
               <input type="text" class="inline-icon-input" data-inline-field="icon" value="${esc(a.icon||'')}" maxlength="8" placeholder="⚔️">
               <input type="text" class="inline-name-input" data-inline-field="name" value="${esc(a.name)}" maxlength="20" placeholder="盟名稱">
             </div>
           </td>
-          <td class="inline-select-td"><select data-inline-field="side">${sideOpts}</select></td>
-          <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="memberCount" value="${a.memberCount || 0}" min="1" step="1"></td>
-          <td class="col-num">
+          <td class="inline-select-td" data-col-key="side"><select data-inline-field="side">${sideOpts}</select></td>
+          <td class="col-num" data-col-key="members"><input type="number" class="inline-num-input" data-inline-field="memberCount" value="${a.memberCount || 0}" min="1" step="1"></td>
+          <td class="col-num" data-col-key="power">
             <div class="inline-power-wrap">
               <input type="number" class="inline-power-input" data-inline-field="totalPowerYi" value="${yi.toFixed(2)}" step="0.01" min="0">
               <span class="inline-unit">億</span>
             </div>
           </td>
-          <td class="col-num inline-avg-preview" data-inline-preview="avgPower">—</td>
-          <td class="col-actions">
+          <td class="col-num inline-avg-preview" data-col-key="avgPower" data-inline-preview="avgPower">—</td>
+          <td class="col-actions" data-col-key="actions">
             <button class="btn btn-success btn-sm" data-action="save-alliance-inline" data-id="${a.id}" title="儲存">💾</button>
             <button class="btn btn-ghost btn-sm" data-action="cancel-alliance-inline" data-id="${a.id}" title="取消">✕</button>
           </td>
@@ -582,13 +988,13 @@ const R = (() => {
       }
 
       return `<tr data-alliance-id="${a.id}" data-idx="${idx}" draggable="true">
-        <td class="drag-handle" title="拖曳排序">⠿</td>
-        <td class="col-name"><span class="alliance-tag ${tagCls}"></span>${icon ? `<span class="alliance-icon">${icon}</span>` : ''}${esc(a.name)}${cap ? ` <span style="color:var(--neon-yellow);font-size:10px;">👑 ${esc(cap.name)}</span>` : ''}</td>
-        <td><span class="chip ${chipCls}">${allianceSideLabel(a.side)}</span></td>
-        <td class="col-num">${(a.memberCount||0).toLocaleString()}</td>
-        <td class="col-num">${formatPower(a.totalPower)}</td>
-        <td class="col-num">${formatAvgPower(avgPower)}</td>
-        <td class="col-actions">
+        <td class="drag-handle" data-col-key="drag" title="拖曳排序">⠿</td>
+        <td class="col-name" data-col-key="name"><span class="alliance-tag ${tagCls}"></span>${icon ? `<span class="alliance-icon">${icon}</span>` : ''}${esc(a.name)}${cap ? ` <span style="color:var(--neon-yellow);font-size:10px;">👑 ${esc(cap.name)}</span>` : ''}</td>
+        <td data-col-key="side"><span class="chip ${chipCls}">${allianceSideLabel(a.side)}</span></td>
+        <td class="col-num" data-col-key="members">${(a.memberCount||0).toLocaleString()}</td>
+        <td class="col-num" data-col-key="power">${formatPower(a.totalPower)}</td>
+        <td class="col-num" data-col-key="avgPower">${formatAvgPower(avgPower)}</td>
+        <td class="col-actions" data-col-key="actions">
           <button class="btn btn-primary btn-sm" data-action="edit-alliance" data-id="${a.id}">✏️</button>
           <button class="btn btn-danger btn-sm" data-action="del-alliance" data-id="${a.id}">🗑️</button>
         </td>
@@ -599,7 +1005,34 @@ const R = (() => {
     bindAllianceInlineEdit(tbody);
     applyAlliancePerms();
     renderIconQuickRow();
+
+  /* ★ v9.1.0：註冊 ColumnManager + 掛載 UI */
+  ColumnManager.register('alliances', [
+    { key: 'drag',     label: '拖曳把手',  fixed: true },
+    { key: 'name',     label: '盟名稱',    fixed: true },
+    { key: 'side',     label: '陣營' },
+    { key: 'members',  label: '總人數' },
+    { key: 'power',    label: '總戰力' },
+    { key: 'avgPower', label: '平均戰力' },
+    { key: 'actions',  label: '操作',      fixed: true },
+  ]);
+  ensureColumnManagerUI('alliances');
+}
+
+/* ★ v9.1.0：確保 ColumnManager UI 掛載到對應的 .col-mgr-anchor */
+function ensureColumnManagerUI(tableId){
+  /* 找對應的 anchor 容器 */
+  const anchor = document.querySelector(`.col-mgr-anchor[data-col-table="${tableId}"]`);
+  if(!anchor) return;
+
+  /* 若尚未建 UI → 建立 */
+  if(!anchor.querySelector('.col-mgr-wrap')){
+    ColumnManager.buildUI(tableId, anchor);
   }
+
+  /* 套用偏好（顯示/隱藏欄位） */
+  setTimeout(() => ColumnManager.applyPrefs(tableId), 0);
+}
 
   function applyAlliancePerms(){
     if(typeof window.SLG.togglePerm !== 'function') return;
@@ -872,7 +1305,6 @@ const R = (() => {
       el.innerHTML = html;
     }
 
-    /* 更新新增戰區的地圖下拉 */
     const zoneMapSel = document.getElementById('newZoneMap');
     if(zoneMapSel){
       const cur = zoneMapSel.value;
@@ -888,7 +1320,6 @@ const R = (() => {
       else if(state.mapLibrary.activeMapId) zoneMapSel.value = state.mapLibrary.activeMapId;
     }
 
-    /* 推演戰區下拉 */
     const sim = document.getElementById('simZoneSelect');
     if(sim){
       const cur = sim.value;
@@ -908,7 +1339,7 @@ const R = (() => {
     }
   }
 
-  /* ── 城池卡片清單（給卡片檢視用） ── */
+  /* ── 城池卡片清單 ── */
   function renderCities(){
     const el = document.getElementById('cityList');
     if(!el) return;
@@ -1047,18 +1478,88 @@ const R = (() => {
     if(bar) bar.style.width = Math.round(p*100) + '%';
   }
 
-  /* ── 總渲染 ── */
   function renderAll(){
-    renderHealth(); renderHost(); renderMembers();
-    renderAlliances(); renderZones(); renderCities();
-    renderChat(); renderChatBadge();
-    renderMatrix();
-    populateCityMatrixFilters();
-    renderCityMatrix();
-    renderSyncStatus();
-    if(typeof window.SLG.renderOverview === 'function') window.SLG.renderOverview();
-  }
+  renderHealth(); renderHost(); renderMembers();
+  renderAlliances(); renderZones(); renderCities();
+  renderChat(); renderChatBadge();
+  renderMatrix();
+  populateCityMatrixFilters();
+  renderCityMatrix();
+  renderSyncStatus();
+  if(typeof window.SLG.renderOverview === 'function') window.SLG.renderOverview();
 
+  /* ★ v9.1.0：其他表格的 ColumnManager 註冊（表格由各自的 render 產生）*/
+  ensureCityColumnManager();
+  ensureWarColumnManager();
+  ensureDeployColumnManager();
+  ensureDynColumnManager();
+}
+
+/* ★ v9.1.0：城池清單的 ColumnManager 註冊 */
+function ensureCityColumnManager(){
+  ColumnManager.register('cities', [
+    { key: 'checkbox',  label: '選取框',   fixed: true },
+    { key: 'map',       label: '🗺️ 地圖' },
+    { key: 'zone',      label: '戰區' },
+    { key: 'alliance',  label: '所屬盟' },
+    { key: 'side',      label: '陣營' },
+    { key: 'code',      label: '城池編號' },
+    { key: 'name',      label: '城池名稱',  fixed: true },
+    { key: 'level',     label: '等級' },
+    { key: 'members',   label: '人數' },
+    { key: 'power',     label: '總戰力' },
+    { key: 'teams',     label: '總隊數' },
+    { key: 'avgPower',  label: '均戰' },
+    { key: 'location',  label: '📍 定位' },
+    { key: 'actions',   label: '操作',      fixed: true },
+  ]);
+  ensureColumnManagerUI('cities');
+}
+
+/* ★ v9.1.0：宣戰清單的 ColumnManager 註冊 */
+function ensureWarColumnManager(){
+  ColumnManager.register('war', [
+    { key: 'startTime', label: '開始時間' },
+    { key: 'endTime',   label: '結束時間' },
+    { key: 'src',       label: '出兵城',   fixed: true },
+    { key: 'type',      label: '類型' },
+    { key: 'tgt',       label: '目標城',   fixed: true },
+    { key: 'actions',   label: '操作',     fixed: true },
+  ]);
+  ensureColumnManagerUI('war');
+}
+
+/* ★ v9.1.0：出兵清單的 ColumnManager 註冊 */
+function ensureDeployColumnManager(){
+  ColumnManager.register('deploy', [
+    { key: 'startTime', label: '開始時間' },
+    { key: 'endTime',   label: '結束時間' },
+    { key: 'src',       label: '出兵城',   fixed: true },
+    { key: 'type',      label: '行動' },
+    { key: 'tgt',       label: '目標城',   fixed: true },
+    { key: 'pre',       label: '戰前%' },
+    { key: 'post',      label: '復活%' },
+    { key: 'priority',  label: '順序' },
+  ]);
+  ensureColumnManagerUI('deploy');
+}
+
+/* ★ v9.1.0：動態戰報的 ColumnManager 註冊 */
+function ensureDynColumnManager(){
+  ColumnManager.register('dyn', [
+    { key: 'time',      label: '時間點',      fixed: true },
+    { key: 'src',       label: '進攻方' },
+    { key: 'action',    label: '行動' },
+    { key: 'tgt',       label: '防守方' },
+    { key: 'consume',   label: '本分鐘消耗' },
+    { key: 'srcRemain', label: '進攻方剩餘' },
+    { key: 'srcCd',     label: '進攻方待復活' },
+    { key: 'tgtRemain', label: '防守方剩餘' },
+    { key: 'tgtCd',     label: '防守方待復活' },
+    { key: 'wall',      label: '城牆剩餘' },
+  ]);
+  ensureColumnManagerUI('dyn');
+}
   /* ── Inline 編輯 盟 ── */
   function startInlineEditAlliance(id){
     if(editingAllianceRowId === id) return;
@@ -1140,15 +1641,9 @@ const R = (() => {
 })();
 
 /* ============================================================
-   ④ ★ v9.0.2 新增：盟色選擇器（從 ui-map.js 移入）
+   ⑤ ★ v9.0.2：盟色選擇器
    ============================================================ */
 
-/**
- * 建立盟色選擇器（給盟編輯 Modal 用）
- * @param {HTMLElement} containerEl - 容器
- * @param {string} allianceId - 盟 ID（新增時傳 null）
- * @param {string} currentColor - 當前顏色
- */
 function buildAllianceColorPicker(containerEl, allianceId, currentColor){
   if(!containerEl) return;
   const template = document.getElementById('allianceColorPickerTemplate');
@@ -1211,7 +1706,7 @@ function buildAllianceColorPicker(containerEl, allianceId, currentColor){
 }
 
 /* ============================================================
-   ⑤ ★ v9.0.2 新增：盟色對照表 Modal（從 main.js 移入）
+   ⑥ ★ v9.0.2：盟色對照表 Modal
    ============================================================ */
 
 function openAllianceColorModal(){
@@ -1252,12 +1747,12 @@ function renderAllianceColorList(){
 Object.assign(window.SLG, {
   renderSyncStatus,
   viz,
+  ColumnManager,   /* ★ v9.1.0 新增 */
   R,
-  /* ★ v9.0.2 新增（從 ui-map.js / main.js 移入） */
   buildAllianceColorPicker,
   openAllianceColorModal,
   renderAllianceColorList,
-  /* 快捷別名（給 main.js 等舊呼叫） */
+  /* 快捷別名 */
   renderAll: () => R.renderAll(),
   renderChat: () => R.renderChat(),
   renderChatBadge: () => R.renderChatBadge(),
@@ -1277,11 +1772,12 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-core.js 結束（v9.0.2）
- * ★ v9.0.2 變更摘要：
- *   1. 新增 buildAllianceColorPicker()（從 ui-map.js 移入）
- *   2. 新增 openAllianceColorModal()（從 main.js 移入）
- *   3. 新增 renderAllianceColorList()（從 main.js 移入）
- *   4. R.saveInlineEditAlliance 補上 color 欄位保留
- *   5. 全部原有功能不變
+ * ui-core.js 結束（v9.1.0）
+ * ★ v9.1.0 變更摘要：
+ *   1. 新增 ColumnManager 模組（表格欄位摺疊管理器）
+ *   2. R.renderAlliances() 加入 data-col-key + ColumnManager 註冊
+ *   3. 保留原有功能
+ * ★ v9.0.2 變更：
+ *   1. 新增 buildAllianceColorPicker
+ *   2. 新增 openAllianceColorModal / renderAllianceColorList
  * ========================================================================== */
