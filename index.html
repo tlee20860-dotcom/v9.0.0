@@ -515,12 +515,38 @@
             <div class="param-item"><label>縮放下限 %</label><input type="number" id="aiMinPct" value="17" min="0" max="100"></div>
           </div>
         </div>
-        <div class="flex-row mt-8" style="gap:6px;">
-          <button class="btn btn-ghost btn-sm" id="btnAIReset">🔄 恢復預設</button>
-          <button class="btn btn-primary btn-sm" id="btnAISave">💾 儲存 AI 參數</button>
-        </div>
+    <div class="flex-row mt-8" style="gap:6px;">
+      <button class="btn btn-ghost btn-sm" id="btnAIReset">🔄 恢復預設</button>
+      <button class="btn btn-primary btn-sm" id="btnAISave">💾 儲存 AI 參數</button>
+    </div>
+  </div>
+
+  <!-- ★ v9.0.1 新增：地名後綴設定 -->
+  <div class="card suffix-settings-card">
+    <div class="card-title">🏷️ 地名後綴設定</div>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊這些關鍵字若出現在城池名稱中，會自動折到下一行顯示。<br>
+      ＊例如「堂琅東水寨」→ 第 1 行「堂琅東」、第 2 行「水寨」。
+    </div>
+    <div class="param-section">
+      <div class="param-section-title">➕ 新增後綴</div>
+      <div class="flex-row" style="gap:6px;">
+        <input type="text" id="suffixNewInput" placeholder="輸入後綴（如：水寨）" maxlength="10" style="flex:1;">
+        <button class="btn btn-primary btn-sm" id="btnAddSuffix">➕ 新增</button>
       </div>
-    </section>
+      <div class="param-hint">最多 10 字，不可重複。</div>
+    </div>
+    <div class="param-section">
+      <div class="param-section-title">📋 目前後綴清單</div>
+      <div class="suffix-tag-list" id="suffixTagList">
+        <div class="text-dim">載入中...</div>
+      </div>
+    </div>
+    <div class="flex-row mt-8">
+      <button class="btn btn-ghost btn-sm" id="btnResetSuffixes">🔄 恢復預設</button>
+    </div>
+  </div>
+</section>
 
     <!-- ============================================================
          參戰盟
@@ -1090,11 +1116,16 @@
                 <canvas id="gameMapCanvas" class="game-map-canvas"></canvas>
               </div>
 
-              <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
-                ✖️ 退出全螢幕
-              </button>
+              <button class="map-fullscreen-exit" <button class="map-fullscreen-exit" id="mapFullscreenExit" title="退出全螢幕">
+  ✖️ 退出全螢幕
+</button>
 
-              <div class="map-float-btns" id="mapFloatBtns">
+<!-- ★ v9.0.1 新增：盟色對照表浮動按鈕 -->
+<button class="map-alliance-color-btn" id="btnAllianceColorList" title="查看盟色對照表">
+  🎨
+</button>
+
+<div class="map-float-btns" id="mapFloatBtns">
                 <button class="map-float-btn" id="btnMapZoomIn" title="放大">＋</button>
                 <button class="map-float-btn" id="btnMapZoomOut" title="縮小">－</button>
                 <button class="map-float-btn" id="btnMapZoomFitBtn" title="適合視窗">⛶</button>
@@ -2124,7 +2155,43 @@
 
 <!-- ====== 第 6 批 Part C-2 結束 ====== -->
 <!-- Part C-3 將從此處接續（script 載入） -->
-<!-- ====== 第 6 批 Part C-3：script 載入 ====== -->
+
+<!-- ============================================================
+     ★ v9.0.1 新增：盟色對照表 Modal
+     ============================================================ -->
+<div class="modal-overlay" id="allianceColorModal">
+  <div class="modal-box modal-lg" style="max-width:520px;">
+    <h3>🎨 盟色對照表</h3>
+    <div class="text-dim" style="margin-bottom:10px;">
+      ＊地圖上城池節點的外框顏色對應此表。<br>
+      ＊本方/同盟/NPC 顏色固定；敵方顏色可手動調整。
+    </div>
+    <div class="alliance-color-list" id="allianceColorList">
+      <div class="text-dim" style="padding:20px;text-align:center;">載入中...</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="allianceColorClose">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     ★ v9.0.1 新增：盟顏色選擇器（在盟編輯 Modal 內用）
+     說明：此區塊不直接顯示，由 JS 動態插入到盟編輯 Modal 內
+     ============================================================ -->
+<template id="allianceColorPickerTemplate">
+  <div class="alliance-color-picker" id="allianceColorPicker">
+    <label>🎨 盟專屬色</label>
+    <div class="alliance-color-picker-grid" id="allianceColorPickerGrid">
+      <!-- 動態填入 20 色圓點 -->
+    </div>
+    <div class="alliance-color-picker-current">
+      目前：<span class="alliance-color-dot" id="allianceColorCurrentDot"></span>
+      <span id="allianceColorCurrentText">#3b82f6</span>
+    </div>
+    <div class="param-hint">＊本方/同盟/NPC 顏色鎖定，僅敵方可選。</div>
+  </div>
+</template>
 
 <!-- ============================================================
      核心載入順序（順序關鍵，不可調換）
