@@ -580,13 +580,15 @@ const ColumnManager = (() => {
     if(!table) return;
 
     /* 對每個 th / td 處理 */
-    const allCells = table.querySelectorAll('th[data-col-key], td[data-col-key]');
-    allCells.forEach(cell => {
-      const key = cell.dataset.colKey;
-      if(!key) return;
-      const visible = entry.prefs[key] !== false;
-      cell.classList.toggle('col-hidden', !visible);
-    });
+const allCells = table.querySelectorAll('th[data-col-key], td[data-col-key]');
+allCells.forEach(cell => {
+  const key = cell.dataset.colKey;
+  if(!key) return;
+  const visible = entry.prefs[key] !== false;
+  cell.classList.toggle('col-hidden', !visible);
+  /* ★ v9.1.1：inline style 雙保險 */
+  cell.style.display = visible ? '' : 'none';
+});
 
     /* 更新按鈕計數 */
     updateBtnCount(tableId);
@@ -1629,15 +1631,20 @@ function ensureDynColumnManager(){
     return true;
   }
 
-  return {
-    renderHealth, renderHost, renderDebug, renderMembers,
-    renderAlliances, renderMatrix, renderCityMatrix, populateCityMatrixFilters,
-    renderIconQuickRow, renderZones, renderCities,
-    renderNarrative, renderChat, renderChatBadge, renderProgress,
-    renderAll, renderSyncStatus,
-    startInlineEditAlliance, cancelInlineEditAlliance, saveInlineEditAlliance,
-    getEditingAllianceRowId: () => editingAllianceRowId,
-  };
+return {
+  renderHealth, renderHost, renderDebug, renderMembers,
+  renderAlliances, renderMatrix, renderCityMatrix, populateCityMatrixFilters,
+  renderIconQuickRow, renderZones, renderCities,
+  renderNarrative, renderChat, renderChatBadge, renderProgress,
+  renderAll, renderSyncStatus,
+  startInlineEditAlliance, cancelInlineEditAlliance, saveInlineEditAlliance,
+  getEditingAllianceRowId: () => editingAllianceRowId,
+  /* ★ v9.1.1：暴露 ColumnManager 註冊函式 */
+  ensureCityColumnManager,
+  ensureWarColumnManager,
+  ensureDeployColumnManager,
+  ensureDynColumnManager,
+};
 })();
 
 /* ============================================================
