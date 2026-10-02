@@ -549,30 +549,34 @@
          ============================================================ -->
     <section id="tab-alliances" class="tab-content">
       <div class="card">
-        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-          <span>🤝 參戰盟清單</span>
-          <!-- ★ v9.0.9：盟編輯模式切換器 -->
-          <div class="alliance-edit-mode-switch" id="allianceEditModeSwitch">
-<button class="aem-switch-btn" data-edit-mode="modal" title="使用 Modal 編輯（欄位完整）">🪟 Modal</button>
-<button class="aem-switch-btn" data-edit-mode="inline" title="表格內快速編輯">✏️ Inline</button>
-          </div>
-          <button class="btn btn-ghost btn-sm" id="btnResetAllianceOrder">🔄 重置排序</button>
-        </div>
+<div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+  <span>🤝 參戰盟清單</span>
+  <div class="flex-row" style="gap:6px;flex-wrap:wrap;">
+    <!-- ★ v9.1.0：欄位管理按鈕（動態產生） -->
+    <div class="col-mgr-anchor" data-col-table="alliances"></div>
+    <!-- ★ v9.0.9：盟編輯模式切換器 -->
+    <div class="alliance-edit-mode-switch" id="allianceEditModeSwitch">
+      <button class="aem-switch-btn" data-edit-mode="modal" title="使用 Modal 編輯（欄位完整）">🪟 Modal</button>
+      <button class="aem-switch-btn" data-edit-mode="inline" title="表格內快速編輯">✏️ Inline</button>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="btnResetAllianceOrder">🔄 重置排序</button>
+  </div>
+</div>
         <div class="text-dim" style="margin-bottom:8px;font-size:10px;">
           ＊拖曳左側把手 ⠿ 可調整順序（滑鼠 / 觸控皆支援）<br>
           ＊編輯模式：<span id="allianceEditModeLabel">🪟 Modal（欄位完整）</span>
         </div>
         <div class="ally-table-wrap">
-          <table class="ally-table" id="allianceTable">
+          <table class="ally-table" id="allianceTable" data-col-table="alliances">
 <thead>
   <tr>
-    <th style="width:32px;"></th>
-    <th>盟名稱</th>
-    <th>陣營</th>
-    <th class="col-num">總人數</th>
-    <th class="col-num">總戰力</th>
-    <th class="col-num">平均戰力</th>
-    <th class="col-actions">操作</th>
+    <th style="width:32px;" data-col-key="drag"></th>
+    <th data-col-key="name">盟名稱</th>
+    <th data-col-key="side">陣營</th>
+    <th class="col-num" data-col-key="members">總人數</th>
+    <th class="col-num" data-col-key="power">總戰力</th>
+    <th class="col-num" data-col-key="avgPower">平均戰力</th>
+    <th class="col-actions" data-col-key="actions">操作</th>
   </tr>
 </thead>
 <tbody id="allianceTableBody">
@@ -710,7 +714,9 @@
         <div class="card">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
 <span>🏰 城池清單</span>
-<div class="flex-row" style="gap:6px;">
+<div class="flex-row" style="gap:6px;flex-wrap:wrap;">
+  <!-- ★ v9.1.0：欄位管理按鈕（動態產生） -->
+  <div class="col-mgr-anchor" data-col-table="cities"></div>
   <button class="btn btn-ghost btn-sm" id="btnCityViewToggle">🃏 卡片檢視</button>
   <button class="btn btn-primary btn-sm" id="btnOpenNewCity">➕ 新增城池</button>
 </div>
@@ -772,26 +778,27 @@
           </div>
 
           <div id="cityTableView" class="city-table-wrap">
-<table class="city-table">
+<table class="city-table" data-col-table="cities">
   <thead>
     <tr>
-      <th style="width:32px;"><input type="checkbox" id="citySelectAll"></th>
-      <th>🗺️ 地圖</th>
-      <th>戰區</th>
-      <th>所屬盟</th>
-      <th>陣營</th>
-      <th>城池編號</th>
-      <th>城池名稱</th>
-      <th>等級</th>
-      <th class="col-num">人數</th>
-      <th class="col-num">總戰力</th>
-      <th class="col-num">總隊數</th>
-      <th class="col-num">均戰</th>
-      <th>操作</th>
+      <th style="width:32px;" data-col-key="checkbox"><input type="checkbox" id="citySelectAll"></th>
+      <th data-col-key="map">🗺️ 地圖</th>
+      <th data-col-key="zone">戰區</th>
+      <th data-col-key="alliance">所屬盟</th>
+      <th data-col-key="side">陣營</th>
+      <th data-col-key="code">城池編號</th>
+      <th data-col-key="name">城池名稱</th>
+      <th data-col-key="level">等級</th>
+      <th class="col-num" data-col-key="members">人數</th>
+      <th class="col-num" data-col-key="power">總戰力</th>
+      <th class="col-num" data-col-key="teams">總隊數</th>
+      <th class="col-num" data-col-key="avgPower">均戰</th>
+      <th data-col-key="location">📍 定位</th>
+      <th data-col-key="actions">操作</th>
     </tr>
   </thead>
   <tbody id="cityTableBody">
-    <tr><td colspan="13" class="city-table-empty">尚無城池資料</td></tr>
+    <tr><td colspan="14" class="city-table-empty">尚無城池資料</td></tr>
   </tbody>
 </table>
           </div>
@@ -827,7 +834,11 @@
 
       <div class="city-subpanel" id="cityPanel-war">
         <div class="card">
-          <div class="card-title">⚔️ 宣戰清單</div>
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span>⚔️ 宣戰清單</span>
+            <!-- ★ v9.1.0：欄位管理按鈕（動態產生） -->
+            <div class="col-mgr-anchor" data-col-table="war"></div>
+          </div>
           <div class="text-dim" style="margin-bottom:8px;">
 ＊定義「誰打誰」與「誰協防誰」。<br>
 ＊<span style="color:var(--neon-purple);">可於 ⚙️ 參數設定開啟「宣戰限制同地圖」開關。</span>
@@ -855,8 +866,7 @@
 </div>
           </div>
 
-          <div class="war-list-container" id="warListContainer"></div>
-
+<div class="war-list-container" id="warListContainer" data-col-table="war"></div>
           <div class="war-add-row">
 <div class="war-add-title">➕ 新增宣戰指示</div>
 <div class="war-add-inputs">
@@ -889,7 +899,11 @@
 
       <div class="city-subpanel" id="cityPanel-deploy">
         <div class="card">
-          <div class="card-title">🎯 出兵清單</div>
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <span>🎯 出兵清單</span>
+            <!-- ★ v9.1.0：欄位管理按鈕（動態產生） -->
+            <div class="col-mgr-anchor" data-col-table="deploy"></div>
+          </div>
           <div class="text-dim" style="margin-bottom:8px;">
 ＊由宣戰指示衍生，設定各路線派兵 %。
           </div>
@@ -914,7 +928,7 @@
 </div>
           </div>
 
-          <div class="deploy-list-container" id="deployListContainer"></div>
+<div class="deploy-list-container" id="deployListContainer" data-col-table="deploy"></div>
         </div>
       </div>
 
@@ -1187,9 +1201,13 @@
          動態戰報
          ============================================================ -->
     <section id="tab-dyn" class="tab-content">
-      <div class="card">
-        <div class="card-title">📈 動態戰報表（路線級）</div>
-        <div class="dyn-filter">
+<div class="card">
+  <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+    <span>📈 動態戰報表（路線級）</span>
+    <!-- ★ v9.1.0：欄位管理按鈕（動態產生） -->
+    <div class="col-mgr-anchor" data-col-table="dyn"></div>
+  </div>
+  <div class="dyn-filter">
           <div><label>時間粒度</label>
 <select id="dynGranularity"><option value="0.5">每 30 秒</option><option value="1">每 1 分鐘</option><option value="5" selected>每 5 分鐘</option><option value="10">每 10 分鐘</option></select>
           </div>
@@ -1201,13 +1219,18 @@
           <div style="flex:0 0 auto;min-width:auto;"><label>&nbsp;</label><button class="btn btn-primary btn-sm" id="btnDynCopy">📋 複製表格</button></div>
         </div>
         <div class="text-dim" id="dynSummary" style="margin-bottom:8px;">尚未推演</div>
-        <div class="dyn-table-wrap">
-          <table class="dyn-table" id="dynTable">
+          <table class="dyn-table" id="dynTable" data-col-table="dyn">
 <thead><tr>
-  <th>時間點</th><th>進攻方</th><th>行動</th><th>防守方</th><th>本分鐘消耗</th>
-  <th>進攻方剩餘</th><th>進攻方待復活</th>
-  <th>防守方剩餘</th><th>防守方待復活</th>
-  <th>城牆剩餘</th>
+  <th data-col-key="time">時間點</th>
+  <th data-col-key="src">進攻方</th>
+  <th data-col-key="action">行動</th>
+  <th data-col-key="tgt">防守方</th>
+  <th data-col-key="consume">本分鐘消耗</th>
+  <th data-col-key="srcRemain">進攻方剩餘</th>
+  <th data-col-key="srcCd">進攻方待復活</th>
+  <th data-col-key="tgtRemain">防守方剩餘</th>
+  <th data-col-key="tgtCd">防守方待復活</th>
+  <th data-col-key="wall">城牆剩餘</th>
 </tr></thead>
 <tbody id="dynTableBody">
   <tr><td colspan="10" style="text-align:center;color:var(--text-dim);padding:20px;">尚未推演</td></tr>
