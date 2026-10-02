@@ -963,26 +963,16 @@ const GameMap = (() => {
         const city = state.cities.find(c => c.id === dragCityId);
         const p = nodePositions.get(dragCityId);
 
-        if(!wasMoved && mapMode !== 'none'){
-          const t = e.changedTouches[0];
-          nodeDragging = null;
-          longPressStart = null;
-          modeTouchStart = null;
-          touchPanStart = null;
-          if(t) handleModeTap(t.clientX, t.clientY);
-          applyCursor();
-          render();
-          return;
-        }
-
         if(city && p && wasMoved){
           const newX = Math.round(p.x);
           const newY = Math.round(p.y);
 
+          /* ★ v9.0.3：同步到地圖庫 nodes + city.mapNode + Firebase */
+          const mapId = city.mapNode?.mapId || getState().mapLibrary.activeMapId || '';
           if(window.SLG.DataSyncManager){
             window.SLG.DataSyncManager.setNode(city.id, newX, newY, {
               source: 'manual',
-              mapId: city.mapNode?.mapId || getState().mapLibrary.activeMapId || '',
+              mapId,
             });
           }
           logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
@@ -1176,7 +1166,7 @@ const GameMap = (() => {
         return;
       }
 
-      if(wasMoved){
+       if(wasMoved){
         const state = getState();
         const city = state.cities.find(c => c.id === dragCityId);
         const p = nodePositions.get(dragCityId);
@@ -1191,10 +1181,12 @@ const GameMap = (() => {
         const newX = Math.round(p.x);
         const newY = Math.round(p.y);
 
+        /* ★ v9.0.3：同步到地圖庫 nodes + city.mapNode + Firebase */
+        const mapId = city.mapNode?.mapId || state.mapLibrary.activeMapId || '';
         if(window.SLG.DataSyncManager){
           window.SLG.DataSyncManager.setNode(city.id, newX, newY, {
             source: 'manual',
-            mapId: city.mapNode?.mapId || state.mapLibrary.activeMapId || '',
+            mapId,
           });
         }
         logSystem(`📍 已儲存「${city.name}」→ (${newX}, ${newY})`);
@@ -1548,7 +1540,15 @@ const GameMap = (() => {
           });
         });
         if(unplaced.length > 0){
-          console.warn(`[GameMap] ${unplaced.length} 座城池未匹配地圖節點，使用臨時座標：`, unplaced.map(c => c.name));
+          /* ★ v9.0.3：同一批 unplaced 只警告一次（用簽章比對） */
+          const sig = unplaced.map(c => c.name).sort().join('|');
+          if(window.__lastUnplacedSig !== sig){
+            window.__lastUnplacedSig = sig;
+            console.warn(
+              `[GameMap] ${unplaced.length} 座城池未匹配地圖節點，使用臨時座標：`,
+              unplaced.map(c => c.name)
+            );
+          }
         }
       }
       layoutDirty = false;
