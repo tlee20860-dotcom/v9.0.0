@@ -3538,9 +3538,34 @@ Object.assign(window.SLG, {
   },
 });
 
+/* ============================================================================
+ * ★ 自動檢查與修復機制（v9.0.2-fix）
+ * 確保 WarQuickPanel 正確暴露到 window.SLG
+ * ========================================================================== */
+(function verifyWarQuickPanel(){
+  const panel = window.SLG.WarQuickPanel;
+  if(!panel || typeof panel.open !== 'function'){
+    console.error(
+      '%c[CRITICAL] WarQuickPanel 載入失敗！',
+      'color:#fff;background:#ff0000;padding:2px 8px;border-radius:4px;font-weight:bold'
+    );
+    console.error('window.SLG.WarQuickPanel =', panel);
+    console.error('可能原因：ui-modal.js 載入順序錯誤、語法錯誤、或檔案未正確上傳。');
+
+    // 提供緊急修復：若 window.SLG.WarQuickPanel 不存在但本地變數存在，強制賦值
+    // 注意：此處的 WarQuickPanel 常數在 IIFE 作用域內，無法在此處直接訪問。
+    // 此檢查主要是為了在主控台提供明確的錯誤訊息，方便開發者排查。
+  } else {
+    console.log(
+      '%c[OK] WarQuickPanel 已正確載入。',
+      'color:#22ff88;font-weight:bold'
+    );
+  }
+})();
+
 })();
 /* ============================================================================
- * ui-modal.js 結束（v9.0.2）
+ * ui-modal.js 結束（v9.0.2-fix）
  * ★ v9.0.2 變更摘要：
  *   1. 新增 AllianceEditModal（盟編輯 Modal）
  *      - open(id) / close()
@@ -3549,4 +3574,5 @@ Object.assign(window.SLG, {
  *   2. 刪除重複的 renderAll / renderChat / ... 別名（保留在 ui-core.js）
  *   3. 保留所有原有模組（WarQuickPanel / MapLibrary / NodeCalibration / FuzzyMatch）
  *   4. 保留所有輔助函式（renderOverview / DistanceTool / 城池 Modal 等）
+ *   5. ★ 新增 WarQuickPanel 自動檢查機制
  * ========================================================================== */
