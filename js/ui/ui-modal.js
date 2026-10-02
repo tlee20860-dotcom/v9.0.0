@@ -854,6 +854,61 @@ const NodeCalibration = (() => {
      用途：大地圖新增/拖曳的節點，寫入 city.mapNode 但未寫回
           地圖庫 nodes。此函式把兩者合併，讓節點校準能看見。
      ══════════════════════════════════════════════════════ */
+     /* ══════════════════════════════════════════════════════
+   ★ v9.0.3：為城池查找節點（多重匹配）
+   順序：① key=code ② key=n_id ③ namedCityId ④ code ⑤ name
+        ⑥ 從 name 中提取編號（如「且蘭東 L77」→ L77）
+   ══════════════════════════════════════════════════════ */
+function findNodeForCity(city){
+  if(!city) return null;
+
+  /* ① key = 城池編號 */
+  if(city.code && nodes[city.code]){
+    return { key: city.code, node: nodes[city.code] };
+  }
+
+  /* ② key = n_id */
+  const nid = 'n_' + city.id;
+  if(nodes[nid]){
+    return { key: nid, node: nodes[nid] };
+  }
+
+  /* ③-⑥ 遍歷所有節點反查 */
+  for(const key in nodes){
+    const node = nodes[key];
+    if(!node) continue;
+
+    /* ③ namedCityId 完全匹配 */
+    if(node.namedCityId === city.id){
+      return { key, node };
+    }
+    /* ④ code 完全匹配 */
+    if(city.code && node.code === city.code){
+      return { key, node };
+    }
+    /* ⑤ name 完全匹配 */
+    if(node.name === city.name){
+      return { key, node };
+    }
+    /* ⑥ 從 node.name 提取編號（處理「且蘭東 L77」格式） */
+    if(node.name && city.code){
+      const m = node.name.match(/[（(]?\s*([A-Za-z][A-Za-z0-9_\-]*)\s*[）)]?\s*$/);
+      if(m && m[1] === city.code){
+        return { key, node };
+      }
+      if(node.name.includes(city.code)){
+        return { key, node };
+      }
+    }
+    /* ⑥-2 反向：node.code 包含在 city.name 中 */
+    if(node.code && city.name && city.name.includes(node.code)){
+      return { key, node };
+    }
+  }
+
+  return null;
+}
+
   function mergeCityMapNodes(nodes, cities, mapId){
     if(!nodes) nodes = {};
     if(!Array.isArray(cities)) return nodes;
