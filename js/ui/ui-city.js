@@ -1,12 +1,13 @@
 /* ============================================================================
- * js/ui/ui-city.js — v9.0.0（拆分自 ui.js 6-2 段後半）
+ * js/ui/ui-city.js — v9.0.4
  * 內容：
  *   CityManager — 城池清單表格
  *     • 表格 / 卡片檢視切換
  *     • 批次操作（戰區 / 盟 / 陣營 / 刪除）
  *     • 行內編輯（點 ✏️ 展開編輯）
  *     • 分級 inline 編輯（點人數欄展開面板）
- *     • 篩選器（地圖 / 戰區 / 盟 / 陣營 / 排序 / 搜尋）
+ *     • 篩選器（地圖 / 戰區 / 盟 / 陣營 / 定位 / 排序 / 搜尋）
+ *     • ★ v9.0.4：定位狀態顯示（表格 + 卡片）
  *     • 聯盟分佈摘要
  *
  * 依賴：window.SLG（core.js）+ DOM
@@ -37,6 +38,121 @@ const CityManager = (() => {
   let editingCityTierId = null;
 
   /* ══════════════════════════════════════════════════════
+     ★ v9.0.4：計算城池定位狀態
+     回傳：{ status, mapId, mapName, x, y, nodeId, hasNodeInLib, cityMapNode }
+     status 可能值：
+       'unlocated'  — 完全沒定位
+       'synced'     — city.mapNode + 地圖庫 nodes 都有
+       'mismatch'   — 只有一邊有
+       'crossmap'   — 定位在其他地圖
+     ══════════════════════════════════════════════════════ */
+  function getCityLocationStatus(city){
+    const state = getState();
+    const result = {
+      status: 'unlocated',
+      mapId: '',
+      mapName: '',
+      x: null,
+      y: null,
+      nodeId: '',
+      hasNodeInLib: false,
+      cityMapNode: false,
+    };
+
+    if(!city) return result;
+
+    /* ① 檢查 city.mapNode */
+    if(city.mapNode && typeof city.mapNode.x === 'number' && typeof city.mapNode.y === 'number'){
+      result.cityMapNode = true;
+      result.mapId = city.mapNode.mapId || '';
+      result.x = Math.round(city.mapNode.x);
+      result.y = Math.round(city.mapNode.y);
+      result.nodeId = city.mapNode.nodeId || '';
+    }
+
+    /* ② 檢查地圖庫 nodes */
+    if(result.mapId){
+      const map = state.mapLibrary.loaded[result.mapId];
+      if(map && map.nodes){
+        const key = city.code || ('n_' + city.id);
+        if(map.nodes[key]){
+          result.hasNodeInLib = true;
+          /* 若 city.mapNode 沒有，但有地圖庫 → 取地圖庫座標 */
+          if(!result.cityMapNode){
+            result.x = Math.round(map.nodes[key].x);
+            result.y = Math.round(map.nodes[key].y);
+            result.nodeId = key;
+          }
+        }
+      }
+    }
+
+    /* ③ 取得地圖名稱 */
+    if(result.mapId){
+      const meta = state.mapLibrary.index[result.mapId];
+      result.mapName = meta ? (meta.name || '未命名') : '（未知地圖）';
+    }
+
+    /* ④ 判定狀態 */
+    const activeMapId = state.mapLibrary.activeMapId || '';
+
+    if(!result.cityMapNode && !result.hasNodeInLib){
+      result.status = 'unlocated';
+    } else if(result.mapId && activeMapId && result.mapId !== activeMapId){
+      result.status = 'crossmap';
+    } else if(result.cityMapNode && result.hasNodeInLib){
+      result.status = 'synced';
+    } else {
+      result.status = 'mismatch';
+    }
+
+    return result;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     ★ v9.0.4：渲染定位狀態徽章（HTML）
+     ══════════════════════════════════════════════════════ */
+  function renderLocationBadge(city){
+    const loc = getCityLocationStatus(city);
+    let cls = 'loc-badge loc-';
+    let icon = '';
+    let text = '';
+    let title = '';
+
+    switch(loc.status){
+      case 'synced':
+        cls += 'synced';
+        icon = '📍';
+        text = loc.mapName || '已定位';
+        title = `✅ 完全同步\n地圖：${loc.mapName}\n座標：(${loc.x}, ${loc.y})`;
+        break;
+      case 'mismatch':
+        cls += 'mismatch';
+        icon = '⚠️';
+        text = loc.mapName ? `${loc.mapName}` : '不同步';
+        title = `⚠️ 部分同步\n` +
+                (loc.cityMapNode ? `city.mapNode: ✅\n` : `city.mapNode: ❌\n`) +
+                (loc.hasNodeInLib ? `地圖庫 nodes: ✅\n` : `地圖庫 nodes: ❌\n`) +
+                (loc.x !== null ? `座標：(${loc.x}, ${loc.y})` : '');
+        break;
+      case 'crossmap':
+        cls += 'crossmap';
+        icon = '🔀';
+        text = loc.mapName || '跨圖';
+        title = `🔀 定位在其他地圖\n地圖：${loc.mapName}\n座標：(${loc.x}, ${loc.y})\n\n（可切換到該地圖查看）`;
+        break;
+      default:
+        cls += 'unlocated';
+        icon = '❌';
+        text = '未定位';
+        title = '❌ 尚未在地圖上定位\n\n請至「🗺️ 地圖」模式開啟「🏙️ 城池編輯」，點空白處新增';
+        break;
+    }
+
+    return `<span class="${cls}" title="${esc(title)}">${icon} ${esc(text)}</span>`;
+  }
+
+  /* ══════════════════════════════════════════════════════
      初始化：綁定所有 UI 事件
      ══════════════════════════════════════════════════════ */
   function init(){
@@ -55,9 +171,9 @@ const CityManager = (() => {
       });
     }
 
-    /* ── 篩選器 ── */
+    /* ── 篩選器（含 ★ v9.0.4 新增 cityFilterLoc）── */
     ['cityFilterMap','cityFilterZone','cityFilterAlliance','cityFilterSide',
-     'citySortBy','citySearchInput'].forEach(id => {
+     'cityFilterLoc','citySortBy','citySearchInput'].forEach(id => {
       const el = document.getElementById(id);
       if(el && !el.dataset.bound){
         el.dataset.bound = '1';
@@ -254,7 +370,6 @@ const CityManager = (() => {
       });
 
       tbody.addEventListener('keydown', (e) => {
-        /* 分級編輯面板快捷鍵 */
         const tierRow = e.target.closest('tr.tier-edit-row');
         if(tierRow){
           const parentId = tierRow.dataset.parentId;
@@ -268,7 +383,6 @@ const CityManager = (() => {
           return;
         }
 
-        /* 行內編輯快捷鍵 */
         if(!e.target.matches('input, select')) return;
         const tr = e.target.closest('tr.inline-editing');
         if(!tr) return;
@@ -333,6 +447,7 @@ const CityManager = (() => {
     const zoneId = document.getElementById('cityFilterZone')?.value || 'all';
     const allianceId = document.getElementById('cityFilterAlliance')?.value || 'all';
     const side = document.getElementById('cityFilterSide')?.value || 'all';
+    const locFilter = document.getElementById('cityFilterLoc')?.value || 'all';  /* ★ v9.0.4 */
     const sortBy = document.getElementById('citySortBy')?.value || 'default';
     const search = (document.getElementById('citySearchInput')?.value || '').trim().toLowerCase();
 
@@ -356,6 +471,11 @@ const CityManager = (() => {
       if(zoneId !== 'all' && c.zoneId !== zoneId) return false;
       if(allianceId !== 'all' && c.allianceId !== allianceId) return false;
       if(side !== 'all' && c.side !== side) return false;
+      /* ★ v9.0.4：定位狀態篩選 */
+      if(locFilter !== 'all'){
+        const loc = getCityLocationStatus(c);
+        if(loc.status !== locFilter) return false;
+      }
       if(search){
         const hay = (c.name + ' ' + (c.code || '')).toLowerCase();
         if(!hay.includes(search)) return false;
@@ -438,7 +558,7 @@ const CityManager = (() => {
     const t4Teams = Math.floor(t4 * (tiers[3].teamsPerPlayer || 0));
 
     return `<tr class="tier-edit-row" data-parent-id="${c.id}">
-      <td colspan="13">
+      <td colspan="14">
         <div class="tier-edit-panel">
           <div class="tier-edit-panel-header">
             👥 分級人數編輯：<span style="color:var(--text-primary);">${esc(c.name)}</span>${c.code ? ` <span style="color:var(--neon-blue);font-size:10px;">[${esc(c.code)}]</span>` : ''}
@@ -583,7 +703,7 @@ const CityManager = (() => {
 
     if(tbody){
       if(list.length === 0){
-        tbody.innerHTML = '<tr><td colspan="13" class="city-table-empty">無城池資料</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="14" class="city-table-empty">無城池資料</td></tr>';
       } else {
         tbody.innerHTML = list.map(c => {
           const isEditingInline = (editingId === c.id);
@@ -636,6 +756,7 @@ const CityManager = (() => {
               </td>
               <td class="col-num"><input type="number" class="inline-num-input" data-inline-field="totalTeams" value="${c.totalTeams||0}" min="0" step="1"></td>
               <td class="col-num inline-avg-preview" data-inline-preview="avgPower">—</td>
+              <td class="city-loc-cell">${renderLocationBadge(c)}</td>
               <td class="col-actions">
                 <button class="btn btn-success btn-sm" data-action="save-city-inline" data-id="${c.id}" title="儲存">💾</button>
                 <button class="btn btn-ghost btn-sm" data-action="cancel-city-inline" data-id="${c.id}" title="取消">✕</button>
@@ -661,6 +782,7 @@ const CityManager = (() => {
               <td class="col-num">${formatPower(c.totalPower)}</td>
               <td class="col-num">${c.totalTeams || '—'}</td>
               <td class="col-num">${avgDisplay}</td>
+              <td class="city-loc-cell">${renderLocationBadge(c)}</td>
               <td>
                 <button class="btn btn-primary btn-sm" data-action="edit-city" data-id="${c.id}">✏️</button>
                 <button class="btn btn-danger btn-sm" data-action="del-city" data-id="${c.id}">🗑️</button>
@@ -897,12 +1019,10 @@ const CityManager = (() => {
         mapId,
       });
     } else if(!mapId){
-      /* 清除地圖 → 也清除節點 */
       if(city.mapNode && window.SLG.DataSyncManager){
         window.SLG.DataSyncManager.deleteNode(id, { silent: true });
       }
     } else {
-      /* 名稱可能改了 → 同步節點名稱 */
       if(window.SLG.DataSyncManager){
         window.SLG.DataSyncManager.renameCity(id);
       }
@@ -931,6 +1051,9 @@ const CityManager = (() => {
     startTierEdit,
     cancelTierEdit,
     saveTierEdit,
+    /* ★ v9.0.4 新增 */
+    getCityLocationStatus,
+    renderLocationBadge,
   };
 })();
 
@@ -943,5 +1066,15 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-city.js 結束（v9.0.0）
+ * ui-city.js 結束（v9.0.4）
+ * ★ v9.0.4 變更摘要：
+ *   1. 新增 getCityLocationStatus() — 定位狀態計算
+ *   2. 新增 renderLocationBadge() — 定位徽章渲染
+ *   3. 表格新增「📍 定位」欄位（td）
+ *   4. 卡片新增定位徽章
+ *   5. 篩選器支援 cityFilterLoc
+ *   6. colspan 13 → 14
+ *   7. 表格空資料提示更新
+ *   8. 行內編輯新增定位 cell
+ *   9. 分級編輯 colspan 13 → 14
  * ========================================================================== */
