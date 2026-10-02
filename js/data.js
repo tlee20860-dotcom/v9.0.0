@@ -703,12 +703,18 @@ function doImportAlliances(){
       }
     });
   }
+  
+  /* ★ v9.0.2：匯入後重建盟色快取（為無 color 的盟自動分配） */
+  if(window.SLG.rebuildAllianceColorMap){
+    window.SLG.rebuildAllianceColorMap();
+  }
 
   tickLamport(); flushPatches(); saveStateImportant();
   if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
   if(window.SLG.CityManager) window.SLG.CityManager.render();
   if(window.SLG.renderMatrix) window.SLG.renderMatrix();
   if(window.SLG.renderOverview) window.SLG.renderOverview();
+  if(window.SLG.GameMap && window.SLG.GameMap.render) window.SLG.GameMap.render();
 
   const summary = mode === 'overwrite'
     ? `已覆蓋：${added} 個盟`
@@ -1508,25 +1514,30 @@ async function importFromSharedSandbox(sharedData, opts = {}){
   }
 
   /* 重算防守開始時間 */
-  if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
-
+  if (window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
+  
+  /* ★ v9.0.2：匯入後重建盟色快取（為無 color 的盟自動分配） */
+  if (window.SLG.rebuildAllianceColorMap) {
+    window.SLG.rebuildAllianceColorMap();
+  }
+  
   saveStateImportant();
-
-  if(typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
-  if(window.SLG.CityManager) window.SLG.CityManager.render();
-  if(window.SLG.WarManager) window.SLG.WarManager.render();
-  if(window.SLG.RouteManager) window.SLG.RouteManager.render();
-  if(window.SLG.GameMap){
-    if(window.SLG.GameMap.invalidateLayout) window.SLG.GameMap.invalidateLayout();
+  
+  if (typeof window.SLG.renderAll === 'function') window.SLG.renderAll();
+  if (window.SLG.CityManager) window.SLG.CityManager.render();
+  if (window.SLG.WarManager) window.SLG.WarManager.render();
+  if (window.SLG.RouteManager) window.SLG.RouteManager.render();
+  if (window.SLG.GameMap) {
+    if (window.SLG.GameMap.invalidateLayout) window.SLG.GameMap.invalidateLayout();
     window.SLG.GameMap.render();
   }
-
-  if(!silent){
+  
+  if (!silent) {
     logSystem(`📥 已匯入共享沙盤資料（${mode === 'overwrite' ? '覆蓋' : '合併'}）`);
   }
   return true;
-}
-
+  }
+  
 /* ============================================================
    暴露
    ============================================================ */

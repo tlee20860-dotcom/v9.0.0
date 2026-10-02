@@ -1,15 +1,18 @@
 /* ============================================================================
- * js/ui/ui-map.js — v9.0.1
+ * js/ui/ui-map.js — v9.0.2
  * 內容：
  *   GameMap — 地圖主模組
- *     ★ v9.0.1 節點顯示優化：
+ *     ★ v9.0.2 節點顯示優化（縮圈 50%）：
  *       - 外框 = 盟專屬色，中間透明
  *       - 圈內顯示：城池名 + 陣營 + 編號
  *       - 名稱折行（每行 5 字；後綴獨立第 2 行）
  *       - 陣營 (本)/(同)/(敵)/(共敵)/(NPC)
- *       - 等級徽章：圈內右上角
+ *       - 等級徽章：圈內右上角（縮小）
  *       - 盟徽：取消
  *       - 縮放 < 0.5x 隱藏文字
+ *       - 圈半徑：18/21/24/27（原 36/42/48/54 縮 50%）
+ *       - 字級：8/11/14（原 10/14/18 縮約 50%）
+ *     ★ v9.0.2：buildAllianceColorPicker 已移至 ui-core.js
  * ========================================================================== */
 (function(){
 'use strict';
@@ -23,7 +26,7 @@ const logSystem = (t) => window.SLG.logSystem(t);
 const getCityMapId = (c) => window.SLG.getCityMapId(c);
 const getAuth = () => window.SLG.Auth;
 
-/* ★ v9.0.1：陣營短標籤 */
+/* ★ v9.0.2：陣營短標籤 */
 const SIDE_SHORT_LABELS = {
   self: '(本)',
   ally: '(同)',
@@ -32,23 +35,23 @@ const SIDE_SHORT_LABELS = {
   npc: '(NPC)',
 };
 
-/* ★ v9.0.1：依縮放決定字體大小 */
+/* ★ v9.0.2：依縮放決定字體大小（縮小 50%） */
 function getFontSizeByZoom(scale){
   if(scale < 0.5) return 0;      /* 隱藏 */
-  if(scale < 1.0) return 10;
-  if(scale < 2.0) return 14;
-  return 18;
+  if(scale < 1.0) return 8;      /* 10 → 8 */
+  if(scale < 2.0) return 11;     /* 14 → 11 */
+  return 14;                      /* 18 → 14 */
 }
 
-/* ★ v9.0.1：依文字行數決定圈半徑 */
+/* ★ v9.0.2：依文字行數決定圈半徑（縮小 50%） */
 function getRadiusByLineCount(lineCount){
-  if(lineCount <= 1) return 36;
-  if(lineCount === 2) return 42;
-  if(lineCount === 3) return 48;
-  return 54;
+  if(lineCount <= 1) return 18;   /* 36 → 18 */
+  if(lineCount === 2) return 21;  /* 42 → 21 */
+  if(lineCount === 3) return 24;  /* 48 → 24 */
+  return 27;                       /* 54 → 27 */
 }
 
-/* ★ v9.0.1：城池名折行（每行 5 字；後綴獨立第 2 行） */
+/* ★ v9.0.2：城池名折行（每行 5 字；後綴獨立第 2 行） */
 function wrapCityName(name, suffixes){
   if(!name) return [''];
   const MAX_PER_LINE = 5;
@@ -1023,9 +1026,10 @@ const GameMap = (() => {
     return { x: sx / view.scale, y: sy / view.scale };
   }
 
+  /* ★ v9.0.2：pickCity 判定半徑縮小（40 → 20） */
   function pickCity(worldPos){
     const state = getState();
-    let closest = null, minDist = 40;
+    let closest = null, minDist = 20;
     for(const c of state.cities){
       if(!isCityVisibleInCurrentZone(c)) continue;
       const p = nodePositions.get(c.id);
@@ -1688,8 +1692,8 @@ const GameMap = (() => {
     const ux = dx / len, uy = dy / len;
     const hit = rayToRectEdge(fromPos.x, fromPos.y, ux, uy, visRect);
     if(!hit) return;
-    const startX = fromPos.x + ux * 36;
-    const startY = fromPos.y + uy * 36;
+    const startX = fromPos.x + ux * 18;
+    const startY = fromPos.y + uy * 18;
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     if(dashed) ctx.setLineDash([8, 6]);
@@ -1710,8 +1714,8 @@ const GameMap = (() => {
     if(!hit) return;
 
     const color = isAttack ? 'rgba(255,68,102,0.9)' : 'rgba(34,255,136,0.9)';
-    const startX = fromPos.x + ux * 36;
-    const startY = fromPos.y + uy * 36;
+    const startX = fromPos.x + ux * 18;
+    const startY = fromPos.y + uy * 18;
 
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
@@ -1786,7 +1790,8 @@ const GameMap = (() => {
 
   function drawWarArrows(){
     if(mapMode !== 'war') return;
-    const NODE_RADIUS = 30;
+    /* ★ v9.0.2：箭頭起點半徑縮小（30 → 18） */
+    const NODE_RADIUS = 18;
     const state = getState();
     const cityById = new Map(state.cities.map(c => [c.id, c]));
 
@@ -1809,8 +1814,8 @@ const GameMap = (() => {
         const ux = dx / dist, uy = dy / dist;
         const sx = fromP.x + ux * NODE_RADIUS;
         const sy = fromP.y + uy * NODE_RADIUS;
-        const ex = toP.x - ux * (NODE_RADIUS + 6);
-        const ey = toP.y - uy * (NODE_RADIUS + 6);
+        const ex = toP.x - ux * (NODE_RADIUS + 4);
+        const ey = toP.y - uy * (NODE_RADIUS + 4);
 
         const color = isAttack ? 'rgba(255,68,102,1)' : 'rgba(34,255,136,1)';
         const width = Math.max(2, Math.min(8, (pct / 100) * 8));
@@ -1862,7 +1867,7 @@ const GameMap = (() => {
   }
 
   /* ══════════════════════════════════════════════════════
-     ★ v9.0.1：繪製城池節點（新版）
+     ★ v9.0.2：繪製城池節點（縮圈 50%）
      ══════════════════════════════════════════════════════ */
   function drawCityNode(c, p){
     const state = getState();
@@ -1889,24 +1894,24 @@ const GameMap = (() => {
     const isWarHover = (mapMode === 'war' && c.id === warHoverTgtId);
     const isRouteFrom = (mapMode === 'route' && c.id === routeFromCityId);
 
-    /* ── 高亮外圈（原邏輯保留） ── */
+    /* ── 高亮外圈（縮小） ── */
     if(isHovered || isHi || isWarFrom || isWarHover || isRouteFrom){
       ctx.beginPath();
-      const r = isHi ? (radius + 10) : ((isWarFrom || isRouteFrom) ? (radius + 14) : (radius + 6));
+      const r = isHi ? (radius + 5) : ((isWarFrom || isRouteFrom) ? (radius + 7) : (radius + 3));
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.strokeStyle = isRouteFrom ? 'rgba(68,170,255,1)'
                       : isWarFrom ? 'rgba(255,204,0,1)'
                       : isWarHover ? 'rgba(255,68,102,1)'
                       : isHi ? 'rgba(34,255,136,1)'
                       : 'rgba(255,255,255,0.4)';
-      ctx.lineWidth = (isWarFrom || isRouteFrom) ? 5 : (isHi ? 4 : 3);
-      if(isWarFrom || isRouteFrom) ctx.setLineDash([8, 5]);
+      ctx.lineWidth = (isWarFrom || isRouteFrom) ? 3 : (isHi ? 2.5 : 2);
+      if(isWarFrom || isRouteFrom) ctx.setLineDash([6, 4]);
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
     /* ── 主圈：外框 = 盟色，中間透明 ── */
-    const borderWidth = isHovered ? 5 : 3;
+    const borderWidth = isHovered ? 3 : 2;
     ctx.beginPath();
     ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
     ctx.strokeStyle = allianceColor;
@@ -1914,19 +1919,19 @@ const GameMap = (() => {
     ctx.stroke();
     /* 中間不填色（透明） */
 
-    /* ── 等級徽章（圈內右上角） ── */
+    /* ── 等級徽章（圈內右上角，縮小） ── */
     const level = c.level || 1;
-    const badgeR = 10;
-    const badgeX = p.x + radius - 6;
-    const badgeY = p.y - radius + 6;
+    const badgeR = 5;
+    const badgeX = p.x + radius - 3;
+    const badgeY = p.y - radius + 3;
     ctx.beginPath();
     ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2);
     ctx.fillStyle = '#ffcc00';
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.font = 'bold 10px "Noto Sans TC", sans-serif';
+    ctx.font = 'bold 7px "Noto Sans TC", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#000';
@@ -1937,7 +1942,7 @@ const GameMap = (() => {
     if(fontSize === 0){
       /* 縮放 < 0.5x → 隱藏文字 */
       if(c.isCapital){
-        ctx.font = '16px sans-serif';
+        ctx.font = '12px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('👑', p.x, p.y);
@@ -1958,19 +1963,19 @@ const GameMap = (() => {
       const ly = startY + i * lineHeight;
       /* 黑描邊 */
       ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 2;
       ctx.strokeText(line, p.x, ly);
       /* 白字 */
       ctx.fillStyle = '#ffffff';
       ctx.fillText(line, p.x, ly);
     });
 
-    /* ── 首都標記（圈外左上角） ── */
+    /* ── 首都標記（圈外左上角，縮小） ── */
     if(c.isCapital){
-      ctx.font = '14px sans-serif';
+      ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('👑', p.x - radius - 6, p.y - radius + 6);
+      ctx.fillText('👑', p.x - radius - 4, p.y - radius + 4);
     }
   }
 
@@ -2280,5 +2285,20 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-map.js 結束（v9.0.1）
+ * ui-map.js 結束（v9.0.2）
+ * ★ v9.0.2 變更摘要：
+ *   1. getRadiusByLineCount：36/42/48/54 → 18/21/24/27（縮 50%）
+ *   2. getFontSizeByZoom：10/14/18 → 8/11/14（縮約 50%）
+ *   3. drawCityNode：
+ *      - badgeR 10 → 5
+ *      - badge 位置 radius-6 → radius-3
+ *      - borderWidth 5/3 → 3/2
+ *      - 高亮外圈 +10/+14/+6 → +5/+7/+3
+ *      - 高亮線寬 5/4/3 → 3/2.5/2
+ *      - 文字描邊 lineWidth 3 → 2
+ *      - 首都標記 14px → 10px，位置微調
+ *   4. pickCity：minDist 40 → 20
+ *   5. drawWarArrows：NODE_RADIUS 30 → 18
+ *   6. drawCrossZoneEdge/Arrow：startX 偏移 36 → 18
+ *   7. 移除 buildAllianceColorPicker（已移至 ui-core.js）
  * ========================================================================== */

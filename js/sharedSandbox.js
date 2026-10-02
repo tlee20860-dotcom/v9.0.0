@@ -24,16 +24,19 @@ const {
 /* ============================================================
    常量
    ============================================================ */
-const SHARED_SYNC_INTERVAL = 5 * 60 * 1000;   /* 5 分鐘 */
-const SHARED_HISTORY_LIMIT = 20;               /* 保留 20 筆歷史 */
-const SWITCH_LOCK_DURATION = 5000;             /* 切換鎖定 5 秒 */
+const SHARED_SYNC_INTERVAL = 5 * 60 * 1000; /* 5 分鐘 */
+const SHARED_HISTORY_LIMIT = 20; /* 保留 20 筆歷史 */
+const SWITCH_LOCK_DURATION = 5000; /* 切換鎖定 5 秒 */
+const SYNC_PROMPT_COOLDOWN_MS = 5 * 60 * 1000; /* ★ v9.0.2：使用者拒絕後，提示冷卻 5 分鐘 */
 
 /* ============================================================
    內部狀態
    ============================================================ */
+   
 let syncTimer = null;
 let syncInProgress = false;
 let switchLockedUntil = 0;
+let lastSyncPromptAt = 0; /* ★ v9.0.2：上次彈窗時間戳（避免短時間重複提示） */
 
 /* ============================================================
    SharedSandboxManager
@@ -623,43 +626,61 @@ const SharedSandboxManager = (() => {
       console.log('[SharedSB] 已停止定時同步');
     }
   }
-
   /* ══════════════════════════════════════════════════════
      ⑪ 單次同步
+     ★ v9.0.2：使用者拒絕載入雲端版本後，5 分鐘內不再重複提示；
+               同時避免「拒絕後立刻自動上傳」覆蓋雲端新版本。
      ══════════════════════════════════════════════════════ */
-  async function syncOnce(){
+  async function syncOnce() {
     const sandboxId = state.activeSharedSandboxId;
-    if(!sandboxId) return;
-
+    if (!sandboxId) return;
+    
     const db = _getDb();
-    if(!db) return;
-
+    if (!db) return;
+    
     /* 讀取雲端版本 */
     const snap = await db.ref(`sharedSandboxes/${sandboxId}/version`).once('value');
     const cloudVersion = snap.val() || 0;
     const localVersion = state.sharedSandboxVersion || 0;
-
-    if(cloudVersion > localVersion){
+    
+    if (cloudVersion > localVersion) {
+      /* ★ v9.0.2：冷卻檢查 — 使用者拒絕後 5 分鐘內不再彈窗 */
+      const now = Date.now();
+      const remain = SYNC_PROMPT_COOLDOWN_MS - (now - lastSyncPromptAt);
+      if (lastSyncPromptAt > 0 && remain > 0) {
+        console.log(`[SharedSB] 彈窗冷卻中（剩餘 ${Math.round(remain / 1000)} 秒），跳過本次提示`);
+        return;
+      }
+      
       /* 雲端有新版本 → 提示使用者 */
       const confirmed = confirm(
         `📡 共享沙盤已更新\n\n` +
         `雲端版本：v${cloudVersion}\n` +
         `本機版本：v${localVersion}\n\n` +
         `是否載入最新版本？\n\n` +
-        `⚠️ 本機未儲存的變更會遺失`
+        `⚠️ 本機未儲存的變更會遺失\n` +
+        `（拒絕後 5 分鐘內不會再提示）`
       );
-      if(confirmed){
+      lastSyncPromptAt = now;
+      
+      if (confirmed) {
         await reloadCurrentShared();
+        /* ★ 載入成功 → 清除冷卻，恢復正常提示節奏 */
+        lastSyncPromptAt = 0;
+      } else {
+        /* ★ 拒絕 → 保留本機版本與 dirty 狀態，
+           本機 dirty 保留（使用者可手動按「立即上傳」），
+           但因本機版本未更新，下次 syncOnce 仍會檢查雲端是否有更新的版本。 */
+        console.log('[SharedSB] 使用者拒絕載入，冷卻 5 分鐘');
       }
-    } else if(cloudVersion === localVersion && canEdit()){
+    } else if (cloudVersion === localVersion && canEdit()) {
       /* 版本一致，且本機有權限 → 檢查是否需要儲存 */
-      if(state.sync.dirty){
+      if (state.sync.dirty) {
         console.log('[SharedSB] 偵測到未儲存變更，自動上傳');
         await save(sandboxId, { silent: true });
       }
     }
   }
-
   /* ══════════════════════════════════════════════════════
      ⑫ 重新載入當前共享沙盤
      ══════════════════════════════════════════════════════ */

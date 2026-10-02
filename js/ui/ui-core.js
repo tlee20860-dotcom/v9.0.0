@@ -1,10 +1,17 @@
 /* ============================================================================
- * js/ui/ui-core.js — v9.0.0（拆分自 ui.js 6-1 段）
+ * js/ui/ui-core.js — v9.0.2
  * 內容：
  *   ① renderSyncStatus — 同步狀態渲染
  *   ② viz            — 態勢圖 / 動態圖 / Canvas 快照
  *   ③ R              — 渲染模組（健康 / 房主 / 成員 / 除錯 / 盟 / 矩陣 /
  *                       戰區 / 城池 / 戰報 / 聊天 / 進度 / 總渲染）
+ *   ④ AllianceColorPicker — 盟色選擇器（v9.0.2 從 ui-map.js 移入）
+ *   ⑤ AllianceColorModal  — 盟色對照表 Modal（v9.0.2 從 main.js 移入）
+ *
+ * ★ v9.0.2 變更：
+ *   - 新增 buildAllianceColorPicker()（從 ui-map.js 移入）
+ *   - 新增 renderAllianceColorList()（從 main.js 移入）
+ *   - 新增 openAllianceColorModal()
  *
  * 依賴：window.SLG（core.js）+ DOM
  * ========================================================================== */
@@ -1108,6 +1115,7 @@ const R = (() => {
       id, name, icon, side, memberCount, totalPower, avgPower, power: totalPower,
       order: typeof alliance.order === 'number' ? alliance.order : 9999,
       createdAt: alliance.createdAt || Date.now(),
+      color: alliance.color || '',
     });
     editingAllianceRowId = null;
     renderAlliances();
@@ -1132,12 +1140,123 @@ const R = (() => {
 })();
 
 /* ============================================================
+   ④ ★ v9.0.2 新增：盟色選擇器（從 ui-map.js 移入）
+   ============================================================ */
+
+/**
+ * 建立盟色選擇器（給盟編輯 Modal 用）
+ * @param {HTMLElement} containerEl - 容器
+ * @param {string} allianceId - 盟 ID（新增時傳 null）
+ * @param {string} currentColor - 當前顏色
+ */
+function buildAllianceColorPicker(containerEl, allianceId, currentColor){
+  if(!containerEl) return;
+  const template = document.getElementById('allianceColorPickerTemplate');
+  if(!template) return;
+
+  const clone = template.content.cloneNode(true);
+  containerEl.innerHTML = '';
+  containerEl.appendChild(clone);
+
+  const alliance = getState().alliances.find(a => a.id === allianceId);
+  const side = alliance ? alliance.side : 'enemy';
+  const sideLocked = (side === 'self' || side === 'ally' || side === 'npc');
+  const lockedColor = window.SLG.SIDE_PRIORITY_COLOR[side];
+
+  const grid = containerEl.querySelector('#allianceColorPickerGrid');
+  const currentDot = containerEl.querySelector('#allianceColorCurrentDot');
+  const currentText = containerEl.querySelector('#allianceColorCurrentText');
+
+  const updateCurrent = (color) => {
+    if(currentDot){ currentDot.style.background = color; currentDot.style.color = color; }
+    if(currentText){ currentText.textContent = color; }
+  };
+  updateCurrent(currentColor);
+
+  const usedColors = new Set(
+    getState().alliances
+      .filter(a => a.id !== allianceId && a.color)
+      .map(a => a.color)
+  );
+
+  const palette = window.SLG.ALLIANCE_COLOR_PALETTE;
+  grid.innerHTML = palette.map(color => {
+    const isCurrent = (color === currentColor);
+    const isLocked = sideLocked && (color !== lockedColor);
+    const isUsed = usedColors.has(color);
+    const disabled = isLocked || isUsed;
+    const cls = [
+      'alliance-color-picker-dot',
+      isCurrent ? 'selected' : '',
+      isLocked ? 'locked' : '',
+    ].filter(Boolean).join(' ');
+    return `<button type="button" class="${cls}"
+      data-color="${color}"
+      style="background:${color}; color:${color};"
+      ${disabled ? 'disabled' : ''}
+      title="${color}${isLocked ? '（鎖定）' : isUsed ? '（已使用）' : ''}"></button>`;
+  }).join('');
+
+  grid.querySelectorAll('.alliance-color-picker-dot:not([disabled])').forEach(dot => {
+    dot.addEventListener('click', () => {
+      const color = dot.dataset.color;
+      updateCurrent(color);
+      grid.querySelectorAll('.alliance-color-picker-dot').forEach(d => d.classList.remove('selected'));
+      dot.classList.add('selected');
+      containerEl.dataset.selectedColor = color;
+    });
+  });
+
+  containerEl.dataset.selectedColor = currentColor;
+}
+
+/* ============================================================
+   ⑤ ★ v9.0.2 新增：盟色對照表 Modal（從 main.js 移入）
+   ============================================================ */
+
+function openAllianceColorModal(){
+  const modal = document.getElementById('allianceColorModal');
+  if(!modal) return;
+  modal.classList.add('show');
+  renderAllianceColorList();
+}
+
+function renderAllianceColorList(){
+  const list = document.getElementById('allianceColorList');
+  if(!list) return;
+  const state = getState();
+  const alliances = getAlliancesSorted();
+  if(alliances.length === 0){
+    list.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">尚無同盟</div>';
+    return;
+  }
+  const colorMap = window.SLG.getAllianceColorMap();
+  list.innerHTML = alliances.map(a => {
+    const color = colorMap.get(a.id) || a.color || '#64748b';
+    const sideCls = a.side === 'self' ? 'self'
+      : a.side === 'ally' ? 'ally'
+      : a.side === 'npc' ? 'npc' : 'enemy';
+    const isSelf = a.side === 'self';
+    return `<div class="alliance-color-row ${isSelf ? 'row-self' : ''}">
+      <span class="alliance-color-dot" style="background:${color}; color:${color};"></span>
+      <span class="alliance-color-name">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</span>
+      <span class="alliance-color-chip ${sideCls}">${allianceSideLabel(a.side)}</span>
+      <span class="alliance-color-hex">${color}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================
    暴露
    ============================================================ */
 Object.assign(window.SLG, {
   renderSyncStatus,
   viz,
   R,
+  /* ★ v9.0.2 新增（從 ui-map.js / main.js 移入） */
+  buildAllianceColorPicker,
+  openAllianceColorModal,
+  renderAllianceColorList,
   /* 快捷別名（給 main.js 等舊呼叫） */
   renderAll: () => R.renderAll(),
   renderChat: () => R.renderChat(),
@@ -1158,5 +1277,11 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-core.js 結束（v9.0.0）
+ * ui-core.js 結束（v9.0.2）
+ * ★ v9.0.2 變更摘要：
+ *   1. 新增 buildAllianceColorPicker()（從 ui-map.js 移入）
+ *   2. 新增 openAllianceColorModal()（從 main.js 移入）
+ *   3. 新增 renderAllianceColorList()（從 main.js 移入）
+ *   4. R.saveInlineEditAlliance 補上 color 欄位保留
+ *   5. 全部原有功能不變
  * ========================================================================== */

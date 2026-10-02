@@ -1,7 +1,13 @@
 /* ============================================================================
- * js/main.js — v9.0.0
+ * js/main.js — v9.0.2
  * 權限、對話框、事件綁定、模擬調度、啟動
- * v9.0.0：共享沙盤整合 + 側邊欄切換器 + mode-bar 切換器 + 定時同步
+ *
+ * ★ v9.0.2 變更：
+ *   - 新增盟編輯模式切換（Modal / Inline）
+ *   - 「編輯盟」按鈕分流
+ *   - 「新增參戰盟」依模式分流
+ *   - 刪除 buildAllianceColorPicker / openAllianceColorModal / renderAllianceColorList
+ *     （已移至 ui-core.js）
  * ========================================================================== */
 (function(){
 'use strict';
@@ -47,6 +53,10 @@ const DYN = () => window.SLG.DYN;
 const DEPLOY = () => window.SLG.DEPLOY;
 const MapLibrary = () => window.SLG.MapLibrary;
 const SharedSandboxManager = () => window.SLG.SharedSandboxManager;
+
+/* ★ v9.0.2：盟編輯模式相關常數 */
+const ALLIANCE_EDIT_MODE_LS_KEY = 'slg_alliance_edit_mode';
+const ALLIANCE_EDIT_MODE_DEFAULT = 'modal';  /* 'modal' | 'inline' */
 
 /* ============================================================
    確認對話框
@@ -312,6 +322,116 @@ function applyPermissions(){
 }
 
 /* ============================================================
+   ★ v9.0.2：盟編輯模式（Modal / Inline）
+   ============================================================ */
+
+/** 讀取目前模式（localStorage） */
+function getAllianceEditMode(){
+  try{
+    const m = localStorage.getItem(ALLIANCE_EDIT_MODE_LS_KEY);
+    if(m === 'modal' || m === 'inline') return m;
+  }catch(e){}
+  return ALLIANCE_EDIT_MODE_DEFAULT;
+}
+
+/** 儲存模式 */
+function setAllianceEditMode(mode){
+  if(mode !== 'modal' && mode !== 'inline') return;
+  try{ localStorage.setItem(ALLIANCE_EDIT_MODE_LS_KEY, mode); }catch(e){}
+}
+
+/** 取得「盟表單區塊」的所有元素（從 allyFormTitle 到 card 結尾） */
+function getAllianceFormElements(){
+  const title = document.getElementById('allyFormTitle');
+  if(!title) return [];
+  const els = [title];
+  let el = title.nextElementSibling;
+  while(el){
+    els.push(el);
+    el = el.nextElementSibling;
+  }
+  return els;
+}
+
+/** 確保「新增同盟」按鈕存在（Modal 模式用） */
+function ensureAddAllianceButton(){
+  let btn = document.getElementById('btnOpenNewAllianceModal');
+  if(btn) return btn;
+  btn = document.createElement('button');
+  btn.id = 'btnOpenNewAllianceModal';
+  btn.className = 'btn btn-primary btn-sm';
+  btn.style.marginTop = '12px';
+  btn.textContent = '➕ 新增同盟';
+  btn.style.display = 'none';
+  btn.addEventListener('click', () => {
+    if(!requirePerm(() => effectiveCanEditData(), '新增同盟')) return;
+    if(window.SLG.AllianceEditModal){
+      window.SLG.AllianceEditModal.open(null);
+    } else {
+      alert('❌ 盟編輯 Modal 未載入');
+    }
+  });
+  const title = document.getElementById('allyFormTitle');
+  if(title && title.parentNode){
+    title.parentNode.insertBefore(btn, title);
+  }
+  return btn;
+}
+
+/** 套用模式（顯示 / 隱藏 inline 表單） */
+function applyAllianceEditMode(mode){
+  const formEls = getAllianceFormElements();
+  const addBtn = ensureAddAllianceButton();
+
+  if(mode === 'modal'){
+    /* Modal 模式：隱藏 inline 表單，顯示「➕ 新增同盟」按鈕 */
+    formEls.forEach(el => { el.style.display = 'none'; });
+    if(addBtn) addBtn.style.display = '';
+  } else {
+    /* Inline 模式：顯示 inline 表單，隱藏「➕ 新增同盟」按鈕 */
+    formEls.forEach(el => { el.style.display = ''; });
+    if(addBtn) addBtn.style.display = 'none';
+  }
+
+  /* 更新模式切換器按鈕狀態 */
+  document.querySelectorAll('#allianceEditModeSwitch .aem-switch-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.editMode === mode);
+  });
+
+  /* 更新模式標籤 */
+  const label = document.getElementById('allianceEditModeLabel');
+  if(label){
+    label.textContent = mode === 'modal'
+      ? '🪟 Modal（欄位完整）'
+      : '✏️ Inline（表格內快速編輯）';
+  }
+}
+
+/** 綁定模式切換器 */
+function bindAllianceEditModeSwitch(){
+  const switchEl = document.getElementById('allianceEditModeSwitch');
+  if(!switchEl || switchEl.dataset.bound) return;
+  switchEl.dataset.bound = '1';
+
+  switchEl.querySelectorAll('.aem-switch-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.editMode;
+      if(!mode) return;
+      setAllianceEditMode(mode);
+      applyAllianceEditMode(mode);
+      logSystem(`🤝 盟編輯模式切換為：${mode === 'modal' ? '🪟 Modal' : '✏️ Inline'}`);
+    });
+  });
+}
+
+/** 初始化盟編輯模式 */
+function initAllianceEditMode(){
+  const mode = getAllianceEditMode();
+  bindAllianceEditModeSwitch();
+  applyAllianceEditMode(mode);
+}
+
+/* ============================================================
    網路中斷遮罩
    ============================================================ */
 function showNetworkOverlay(){
@@ -357,12 +477,10 @@ function bindSyncWatchers(){
     const state = getState();
 
     if(document.visibilityState !== 'hidden'){
-      /* 共享模式 */
       if(state.sandboxMode === 'shared' && SharedSandboxManager()){
         SharedSandboxManager().syncOnce().catch(e => console.warn(e));
         return;
       }
-      /* 個人模式 */
       if(state.auth.signedIn && state.sync.dirty && !state.sync.uploading && isOnline()){
         logSystem('🔄 偵測到殘留變更，重新觸發上傳');
         performCloudUpload('visibility-restore').catch(e => console.warn(e));
@@ -370,16 +488,13 @@ function bindSyncWatchers(){
       return;
     }
 
-    /* 頁面隱藏時 */
     if(state.sandboxMode === 'shared'){
-      /* 共享模式：觸發一次同步 */
       if(isOnline() && SharedSandboxManager()){
         SharedSandboxManager().syncOnce().catch(e => console.warn(e));
       }
       return;
     }
 
-    /* 個人模式 */
     if(!state.sync.prefs.visibilitySync) return;
     if(!state.auth.signedIn) return;
     if(!state.sync.dirty) return;
@@ -395,7 +510,6 @@ function bindSyncWatchers(){
     const state = getState();
     saveState();
 
-    /* 共享模式：不同步（由 SharedSandboxManager 定時處理），僅儲存本機 */
     if(state.sandboxMode === 'shared'){
       return;
     }
@@ -493,7 +607,6 @@ function bindSyncSettingsUI(){
       if(!state.auth.signedIn){ alert('請先登入才能查看雲端歷史'); return; }
       if(!isOnline()){ alert('離線中，無法讀取歷史'); return; }
 
-      /* 共享模式 → 開啟共享歷史 Modal */
       if(state.sandboxMode === 'shared' && state.activeSharedSandboxId){
         const modal = document.getElementById('sharedHistoryModal');
         if(modal) modal.classList.add('show');
@@ -501,7 +614,6 @@ function bindSyncSettingsUI(){
         return;
       }
 
-      /* 個人模式 */
       const modal = document.getElementById('historyModal');
       if(modal) modal.classList.add('show');
       if(window.SLG.renderHistoryList) await window.SLG.renderHistoryList();
@@ -700,7 +812,6 @@ function executeSimulation(zoneId){
     return;
   }
 
-  /* Worker 不可用 → 主執行緒備援 */
   setTimeout(async () => {
     try{
       const result = await window.SLG.runSimulation(
@@ -1021,7 +1132,6 @@ function renderSharedSandboxList(){
       });
     }
 
-    /* 附加「新增」按鈕 */
     if(canCreate){
       const addBtn = document.createElement('button');
       addBtn.className = 'sandbox-item add-new';
@@ -1103,7 +1213,6 @@ function renderSharedSandboxList(){
         </tr>`;
       }).join('');
 
-      /* 綁定列表按鈕 */
       tableBody.querySelectorAll('[data-ss-action]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const action = btn.dataset.ssAction;
@@ -1132,11 +1241,9 @@ function updateSandboxSwitcherUI(){
 
   const isShared = state.sandboxMode === 'shared';
 
-  /* 按鈕狀態 */
   if(sharedBtn) sharedBtn.classList.toggle('active', isShared);
   if(personalBtn) personalBtn.classList.toggle('active', !isShared);
 
-  /* 標籤 */
   if(sharedLabel){
     if(isShared && state.activeSharedSandboxName){
       sharedLabel.textContent = `${state.activeSharedSandboxName} ▼`;
@@ -1148,7 +1255,6 @@ function updateSandboxSwitcherUI(){
     personalActive.style.display = isShared ? 'none' : '';
   }
 
-  /* body class */
   if(isShared){
     document.body.classList.remove('sandbox-personal');
     document.body.classList.add('sandbox-shared');
@@ -1235,17 +1341,12 @@ async function submitAddSharedSandbox(){
     const newSb = await SharedSandboxManager().create(name);
     closeAddSharedSandboxModal();
     alert(`✅ 已建立共享沙盤「${newSb.name}」！\n\n新沙盤為空白，可開始建立資料。`);
-
-    /* 自動切換到新建的沙盤 */
     await switchToSharedSandbox(newSb.id);
-
-    /* 重繪側邊欄 */
     renderSharedSandboxList();
   }catch(e){
     if(e.message && e.message.includes('名稱衝突')){
       const ok = confirm(e.message + '\n\n是否仍要建立？');
       if(ok){
-        /* 用時間戳後綴 */
         const newName = name + '_' + Date.now().toString(36).slice(-4);
         try{
           const newSb = await SharedSandboxManager().create(newName);
@@ -1328,7 +1429,6 @@ async function deleteSharedSandbox(sandboxId){
   }
 }
 
-/* 共享沙盤歷史 */
 async function renderSharedHistoryList(){
   const listEl = document.getElementById('sharedHistoryList');
   if(!listEl) return;
@@ -1456,7 +1556,7 @@ function initListPrefs(){
    ============================================================ */
 function bindMapLibraryUI(){
   if(typeof window.SLG.detectFullMap !== 'function'){
-    console.warn('[v9.0.0] geminiOcr.js 未載入，AI 辨識功能無法使用');
+    console.warn('[v9.0.2] geminiOcr.js 未載入，AI 辨識功能無法使用');
   } else {
     console.log(
       '%c[Gemini OCR] 已就緒（端點：' + (window.SLG.GEMINI_OCR_ENDPOINT || '/api/ocr') + '）',
@@ -1464,10 +1564,10 @@ function bindMapLibraryUI(){
     );
   }
   if(typeof window.SLG.detectFromImage !== 'function'){
-    console.warn('[v9.0.0] circleDetect.js 未載入（此為選用，不影響 AI 辨識）');
+    console.warn('[v9.0.2] circleDetect.js 未載入（此為選用，不影響 AI 辨識）');
   }
   if(typeof window.SLG.WarQuickPanel !== 'object'){
-    console.warn('[v9.0.0] WarQuickPanel 未載入，地圖宣戰模式將無法使用');
+    console.warn('[v9.0.2] WarQuickPanel 未載入，地圖宣戰模式將無法使用');
   } else {
     console.log('%c[宣戰模式] WarQuickPanel 已就緒', 'color:#22ff88;font-size:11px');
   }
@@ -1483,7 +1583,6 @@ function bindMapLibraryUI(){
 
 /* ★ v9.0.1 新增：地名後綴設定 UI 綁定 */
 function bindCitySuffixUI(){
-  /* 新增後綴按鈕 */
   const btnAdd = document.getElementById('btnAddSuffix');
   if(btnAdd && !btnAdd.dataset.bound){
     btnAdd.dataset.bound = '1';
@@ -1498,7 +1597,6 @@ function bindCitySuffixUI(){
     });
   }
 
-  /* Enter 快速新增 */
   const input = document.getElementById('suffixNewInput');
   if(input && !input.dataset.bound){
     input.dataset.bound = '1';
@@ -1507,7 +1605,6 @@ function bindCitySuffixUI(){
     });
   }
 
-  /* 恢復預設 */
   const btnReset = document.getElementById('btnResetSuffixes');
   if(btnReset && !btnReset.dataset.bound){
     btnReset.dataset.bound = '1';
@@ -1518,13 +1615,11 @@ function bindCitySuffixUI(){
     });
   }
 
-  /* 事件：後綴清單變更 → 重繪 */
   if(!window.__suffixEventBound){
     window.__suffixEventBound = true;
     getOn()(EVT().CITY_SUFFIXES_CHANGED, () => renderCitySuffixTags());
   }
 
-  /* 初次渲染 */
   renderCitySuffixTags();
 }
 
@@ -1553,6 +1648,7 @@ function renderCitySuffixTags(){
     });
   });
 }
+
 /* ============================================================
    路線刪除確認 Modal 綁定
    ============================================================ */
@@ -1657,7 +1753,6 @@ function bindSandboxSwitcherUI(){
     sharedSwitch.dataset.bound = '1';
     sharedSwitch.addEventListener('click', (e) => {
       e.stopPropagation();
-      /* 若當前不是共享模式但有 activeSharedSandboxId → 切到該共享 */
       if(state.sandboxMode === 'shared'){
         toggleSandboxDropdown();
       } else {
@@ -1745,13 +1840,15 @@ function bindSandboxSwitcherUI(){
   }
 }
 
-/* ★ v9.0.1 新增：盟色對照表 UI 綁定 */
+/* ★ v9.0.1 新增：盟色對照表 UI 綁定（浮動按鈕） */
 function bindAllianceColorUI(){
   const btn = document.getElementById('btnAllianceColorList');
   if(btn && !btn.dataset.bound){
     btn.dataset.bound = '1';
     btn.addEventListener('click', () => {
-      openAllianceColorModal();
+      if(window.SLG.openAllianceColorModal){
+        window.SLG.openAllianceColorModal();
+      }
     });
   }
 
@@ -1767,105 +1864,10 @@ function bindAllianceColorUI(){
     window.__allianceColorEventBound = true;
     getOn()(EVT().ALLIANCE_COLOR_CHANGED, () => {
       if(document.getElementById('allianceColorModal')?.classList.contains('show')){
-        renderAllianceColorList();
+        if(window.SLG.renderAllianceColorList) window.SLG.renderAllianceColorList();
       }
     });
   }
-}
-
-/* ★ v9.0.1 新增：開啟盟色對照表 Modal */
-function openAllianceColorModal(){
-  const modal = document.getElementById('allianceColorModal');
-  if(!modal) return;
-  modal.classList.add('show');
-  renderAllianceColorList();
-}
-
-/* ★ v9.0.1 新增：渲染盟色對照表 */
-function renderAllianceColorList(){
-  const list = document.getElementById('allianceColorList');
-  if(!list) return;
-  const state = getState();
-  const alliances = window.SLG.getAlliancesSorted();
-  if(alliances.length === 0){
-    list.innerHTML = '<div class="text-dim" style="padding:20px;text-align:center;">尚無同盟</div>';
-    return;
-  }
-  const colorMap = window.SLG.getAllianceColorMap();
-  list.innerHTML = alliances.map(a => {
-    const color = colorMap.get(a.id) || a.color || '#64748b';
-    const sideCls = a.side === 'self' ? 'self'
-      : a.side === 'ally' ? 'ally'
-      : a.side === 'npc' ? 'npc' : 'enemy';
-    const isSelf = a.side === 'self';
-    return `<div class="alliance-color-row ${isSelf ? 'row-self' : ''}">
-      <span class="alliance-color-dot" style="background:${color}; color:${color};"></span>
-      <span class="alliance-color-name">${a.icon ? a.icon + ' ' : ''}${esc(a.name)}</span>
-      <span class="alliance-color-chip ${sideCls}">${window.SLG.allianceSideLabel(a.side)}</span>
-      <span class="alliance-color-hex">${color}</span>
-    </div>`;
-  }).join('');
-}
-
-/* ★ v9.0.1 新增：建立盟色選擇器（給盟編輯 Modal 用） */
-function buildAllianceColorPicker(containerEl, allianceId, currentColor){
-  if(!containerEl) return;
-  const template = document.getElementById('allianceColorPickerTemplate');
-  if(!template) return;
-
-  const clone = template.content.cloneNode(true);
-  containerEl.innerHTML = '';
-  containerEl.appendChild(clone);
-
-  const alliance = getState().alliances.find(a => a.id === allianceId);
-  const sideLocked = alliance && (alliance.side === 'self' || alliance.side === 'ally' || alliance.side === 'npc');
-  const lockedColor = alliance ? window.SLG.SIDE_PRIORITY_COLOR[alliance.side] : null;
-
-  const grid = containerEl.querySelector('#allianceColorPickerGrid');
-  const currentDot = containerEl.querySelector('#allianceColorCurrentDot');
-  const currentText = containerEl.querySelector('#allianceColorCurrentText');
-
-  const updateCurrent = (color) => {
-    if(currentDot){ currentDot.style.background = color; currentDot.style.color = color; }
-    if(currentText){ currentText.textContent = color; }
-  };
-  updateCurrent(currentColor);
-
-  const usedColors = new Set(
-    getState().alliances
-      .filter(a => a.id !== allianceId && a.color)
-      .map(a => a.color)
-  );
-
-  const palette = window.SLG.ALLIANCE_COLOR_PALETTE;
-  grid.innerHTML = palette.map(color => {
-    const isCurrent = (color === currentColor);
-    const isLocked = sideLocked && (color !== lockedColor);
-    const isUsed = usedColors.has(color);
-    const disabled = isLocked || isUsed;
-    const cls = [
-      'alliance-color-picker-dot',
-      isCurrent ? 'selected' : '',
-      isLocked ? 'locked' : '',
-    ].filter(Boolean).join(' ');
-    return `<button type="button" class="${cls}"
-      data-color="${color}"
-      style="background:${color}; color:${color};"
-      ${disabled ? 'disabled' : ''}
-      title="${color}${isLocked ? '（鎖定）' : isUsed ? '（已使用）' : ''}"></button>`;
-  }).join('');
-
-  grid.querySelectorAll('.alliance-color-picker-dot:not([disabled])').forEach(dot => {
-    dot.addEventListener('click', () => {
-      const color = dot.dataset.color;
-      updateCurrent(color);
-      grid.querySelectorAll('.alliance-color-picker-dot').forEach(d => d.classList.remove('selected'));
-      dot.classList.add('selected');
-      containerEl.dataset.selectedColor = color;
-    });
-  });
-
-  containerEl.dataset.selectedColor = currentColor;
 }
 
 /* ============================================================
@@ -1894,6 +1896,8 @@ function bindUI(){
       if(tabId === 'tab-alliances'){
         if(R() && R().renderAlliances) R().renderAlliances();
         if(R() && R().renderMatrix) R().renderMatrix();
+        /* ★ v9.0.2：進入盟 Tab 時，重新套用盟編輯模式 UI（避免被權限覆蓋） */
+        applyAllianceEditMode(getAllianceEditMode());
       }
       if(tabId === 'tab-dyn'){
         DYN().setRows(getState().dynRows);
@@ -2002,14 +2006,15 @@ function bindUI(){
   if(window.SLG.bindAuthUI) window.SLG.bindAuthUI();
 
   bindSyncSettingsUI();
-bindTroopTierUI();
-bindMapLibraryUI();
-bindRouteDeleteModal();
-bindBackupNowButton();
-bindMapRelationUI();
-bindSandboxSwitcherUI();  /* ★ v9.0.0 */
-bindCitySuffixUI();       /* ★ v9.0.1 */
-bindAllianceColorUI();    /* ★ v9.0.1 */
+  bindTroopTierUI();
+  bindMapLibraryUI();
+  bindRouteDeleteModal();
+  bindBackupNowButton();
+  bindMapRelationUI();
+  bindSandboxSwitcherUI();
+  bindCitySuffixUI();
+  bindAllianceColorUI();
+  initAllianceEditMode();   /* ★ v9.0.2：初始化盟編輯模式 */
 
   const btnLogout = document.getElementById('btnLogout');
   if(btnLogout && !btnLogout.dataset.bound){
@@ -2139,7 +2144,6 @@ bindAllianceColorUI();    /* ★ v9.0.1 */
       if(!state.auth.signedIn){ alert('請先登入'); return; }
       if(!isOnline()){ alert('離線中，無法讀取歷史'); return; }
 
-      /* 共享模式 → 共享歷史 */
       if(state.sandboxMode === 'shared' && state.activeSharedSandboxId){
         const modal = document.getElementById('sharedHistoryModal');
         if(modal) modal.classList.add('show');
@@ -2321,10 +2325,16 @@ bindAllianceColorUI();    /* ★ v9.0.1 */
       order = maxOrder + 1;
     }
 
-    window.SLG.upsertEntity('alliance', {
+    /* ★ v9.0.2：保留原有顏色（若有），否則由 core.js 自動分配 */
+    const entity = {
       id, name, icon, side, memberCount, totalPower, avgPower, power: totalPower,
       order, createdAt: existing ? existing.createdAt : Date.now(),
-    });
+    };
+    if(existing && existing.color){
+      entity.color = existing.color;
+    }
+
+    window.SLG.upsertEntity('alliance', entity);
 
     window.SLG.resetAllianceForm();
     R().renderAlliances();
@@ -2353,7 +2363,13 @@ bindAllianceColorUI();    /* ★ v9.0.1 */
     const editBtn = e.target.closest('[data-action="edit-alliance"]');
     if(editBtn){
       if(!requirePerm(() => effectiveCanEditData(), '編輯同盟')) return;
-      if(window.SLG.startInlineEditAlliance) window.SLG.startInlineEditAlliance(editBtn.dataset.id);
+      /* ★ v9.0.2：依模式分流 */
+      const mode = getAllianceEditMode();
+      if(mode === 'modal' && window.SLG.AllianceEditModal){
+        window.SLG.AllianceEditModal.open(editBtn.dataset.id);
+      } else if(window.SLG.startInlineEditAlliance){
+        window.SLG.startInlineEditAlliance(editBtn.dataset.id);
+      }
       return;
     }
     const delBtn = e.target.closest('[data-action="del-alliance"]');
@@ -2362,13 +2378,27 @@ bindAllianceColorUI();    /* ★ v9.0.1 */
       const state = getState();
       const a = state.alliances.find(x => x.id === delBtn.dataset.id);
       if(!a) return;
-      showConfirm('刪除同盟', `確定刪除「${a.name}」？`, () => {
+      showConfirm('刪除同盟', `確定刪除「${a.name}」？\n\n相關城池會變成 NPC。`, () => {
+        /* 城池的 allianceId 改為 NPC */
+        const npc = window.SLG.ensureNpcAlliance ? window.SLG.ensureNpcAlliance() : null;
+        if(npc){
+          for(const c of state.cities){
+            if(c.allianceId === a.id){
+              c.allianceId = npc.id;
+              c.side = 'npc';
+              state.entityRev.city[c.id] = (state.entityRev.city[c.id] || 0) + 1;
+              window.SLG.markDirty('city', c.id);
+            }
+          }
+        }
         if(state.editingAllianceId === a.id) window.SLG.resetAllianceForm();
         window.SLG.deleteEntity('alliance', a.id);
         R().renderAlliances();
         if(R() && R().renderMatrix) R().renderMatrix();
+        if(window.SLG.CityManager) window.SLG.CityManager.render();
+        if(window.SLG.GameMap) window.SLG.GameMap.render();
         if(window.SLG.renderOverview) window.SLG.renderOverview();
-        saveState();
+        saveState('important');
       });
     }
   });
@@ -2704,7 +2734,6 @@ function bindEvents(){
         MapLibrary().renderSelect();
         MapLibrary().renderGallery();
       }
-      /* 載入共享沙盤索引 */
       if(SharedSandboxManager()){
         SharedSandboxManager().fetchIndex()
           .then(() => renderSharedSandboxList())
@@ -2735,6 +2764,9 @@ function bindEvents(){
       const accTab = document.getElementById('tab-accounts');
       if(accTab && accTab.classList.contains('active')){ window.SLG.Accounts.refresh(); }
     }
+
+    /* ★ v9.0.2：登入 / 登出後重新套用盟編輯模式（權限可能改變） */
+    applyAllianceEditMode(getAllianceEditMode());
   });
 
   getOn()(EVT().CONN, () => {
@@ -2884,7 +2916,6 @@ function bindEvents(){
     applyPermissions();
   });
 
-  /* ★ v9.0.0：共享沙盤事件 */
   getOn()(EVT().SHARED_SANDBOXES_UPDATED, () => {
     renderSharedSandboxList();
   });
@@ -2895,14 +2926,12 @@ function bindEvents(){
     updateModeBar();
   });
 
-  /* ★ v9.0.1 新增：地名後綴變更 → 重繪節點 */
   getOn()(EVT().CITY_SUFFIXES_CHANGED, () => {
     if(window.SLG.GameMap && window.SLG.GameMap.render){
       window.SLG.GameMap.render();
     }
   });
 
-  /* ★ v9.0.1 新增：盟色變更 → 重繪地圖 */
   getOn()(EVT().ALLIANCE_COLOR_CHANGED, () => {
     if(window.SLG.GameMap && window.SLG.GameMap.render){
       window.SLG.GameMap.render();
@@ -2926,7 +2955,6 @@ function boot(){
 
   const state = getState();
 
-  /* 初始化沙盤模式 UI */
   document.body.classList.remove('sandbox-shared', 'sandbox-personal');
   document.body.classList.add(state.sandboxMode === 'shared' ? 'sandbox-shared' : 'sandbox-personal');
 
@@ -2999,9 +3027,11 @@ function boot(){
   if(window.SLG.Summary) window.SLG.Summary.init();
   if(window.SLG.CityManager) window.SLG.CityManager.init();
 
-  /* 初始化共享沙盤管理器 UI */
   renderSharedSandboxList();
   updateSandboxSwitcherUI();
+
+  /* ★ v9.0.2：初始化盟編輯模式 */
+  initAllianceEditMode();
 
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
   R().renderAll();
@@ -3070,14 +3100,12 @@ function boot(){
           await SharedSandboxManager().fetchIndex();
           renderSharedSandboxList();
 
-          /* v9.0.0：若為共享模式，啟動定時同步 + 監聽當前沙盤 */
           if(getState().sandboxMode === 'shared' && getState().activeSharedSandboxId){
             SharedSandboxManager().startSyncTimer();
             if(window.SLG.startSharedSandboxWatcher){
               window.SLG.startSharedSandboxWatcher(getState().activeSharedSandboxId);
             }
           } else {
-            /* v9.0.0：個人模式啟動個人定時同步 */
             startSyncTimer();
           }
         }
@@ -3098,31 +3126,21 @@ function boot(){
       if(window.SLG.renderAuthUI) window.SLG.renderAuthUI();
       applyPermissions();
     }
+
+    /* ★ v9.0.2：登入流程完成後，重新套用盟編輯模式（確保 inline 表單 / Modal 按鈕正確） */
+    applyAllianceEditMode(getAllianceEditMode());
   })();
 
-  /* v9.0.0：啟動訊息 */
   console.log(
-    '%c[沙盤 v9.0.0] 共享沙盤 + 個人沙盤雙模式就緒',
+    '%c[沙盤 v9.0.2] 共享沙盤 + 個人沙盤雙模式 + 盟編輯雙模式',
     'color:#22ff88;font-weight:bold;font-size:14px'
   );
   console.log(
-    '%c  · 沙盤模式：' + (typeof window.SLG.SharedSandboxManager === 'object' ? '✅' : '❌'),
+    '%c  · 盟編輯模式：' + getAllianceEditMode(),
     'color:#94a3b8;font-size:12px'
   );
   console.log(
-    '%c  · 資料版本：' + (window.SLG.DATA_VERSION || 0),
-    'color:#94a3b8;font-size:12px'
-  );
-  console.log(
-    '%c  · 側邊欄切換器：' + (document.getElementById('sharedSandboxGroup') ? '✅' : '❌'),
-    'color:#94a3b8;font-size:12px'
-  );
-  console.log(
-    '%c  · mode-bar 切換器：' + (document.getElementById('sandboxSwitcher') ? '✅' : '❌'),
-    'color:#94a3b8;font-size:12px'
-  );
-  console.log(
-    '%c  · 頂部彩色條：' + (document.body.classList.contains('sandbox-shared') ? '藍(共享)' : '黃(個人)'),
+    '%c  · 地圖圈半徑：18/21/24/27（v9.0.2 縮 50%）',
     'color:#94a3b8;font-size:12px'
   );
 }
@@ -3163,7 +3181,6 @@ Object.assign(window.SLG, {
   bindMapRelationUI,
   refreshMapLibraryIndex,
 
-  /* ★ v9.0.0：共享沙盤 UI */
   renderSharedSandboxList,
   updateSandboxSwitcherUI,
   switchToSharedSandbox,
@@ -3181,14 +3198,18 @@ Object.assign(window.SLG, {
   toggleSandboxDropdown,
   bindSandboxSwitcherUI,
 
-  /* ★ v9.0.1 新增 */
   bindCitySuffixUI,
   renderCitySuffixTags,
   bindAllianceColorUI,
-  openAllianceColorModal,
-  renderAllianceColorList,
-  buildAllianceColorPicker,
+
+  /* ★ v9.0.2 新增：盟編輯模式 */
+  getAllianceEditMode,
+  setAllianceEditMode,
+  applyAllianceEditMode,
+  bindAllianceEditModeSwitch,
+  initAllianceEditMode,
 });
+
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
 } else {
@@ -3197,5 +3218,14 @@ if(document.readyState === 'loading'){
 
 })();
 /* ============================================================================
- * main.js 結束（v9.0.0）
+ * main.js 結束（v9.0.2）
+ * ★ v9.0.2 變更摘要：
+ *   1. 新增盟編輯模式（Modal / Inline）
+ *      - getAllianceEditMode / setAllianceEditMode
+ *      - applyAllianceEditMode / bindAllianceEditModeSwitch / initAllianceEditMode
+ *      - 「編輯盟」按鈕分流
+ *      - 「新增參戰盟」表單依模式隱藏 / 顯示（Modal 模式改顯示「➕ 新增同盟」按鈕）
+ *   2. 刪除 buildAllianceColorPicker / openAllianceColorModal / renderAllianceColorList
+ *      （已移至 ui-core.js）
+ *   3. 保留所有原有功能
  * ========================================================================== */

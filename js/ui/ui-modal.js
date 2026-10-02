@@ -1,14 +1,19 @@
 /* ============================================================================
- * js/ui/ui-modal.js — v9.0.0（拆分自 ui.js 6-4 段，最終段）
+ * js/ui/ui-modal.js — v9.0.2
  * 內容：
  *   ① WarQuickPanel   — 宣戰快速建立面板
  *   ② MapLibrary      — 地圖庫管理
  *   ③ NodeCalibration — 節點校準（AI 辨識 / 定點 / 手動補點）
  *   ④ FuzzyMatch      — 模糊匹配候選 Modal
- *   ⑤ 輔助函式        — renderOverview / DistanceTool / 城池 Modal 等
- *   ⑥ 全域暴露
+ *   ⑤ AllianceEditModal — 盟編輯 Modal（★ v9.0.2 新增）
+ *   ⑥ 輔助函式        — renderOverview / DistanceTool / 城池 Modal 等
+ *   ⑦ 全域暴露
  *
- * 依賴：window.SLG（core.js + firebase.js + dataSync.js + 其他 ui/*.js）+ DOM
+ * ★ v9.0.2 變更：
+ *   - 新增 AllianceEditModal（盟編輯 Modal）
+ *   - 刪除重複的 renderAll / renderChat / ... 別名（保留在 ui-core.js）
+ *
+ * 依賴：window.SLG（core.js + firebase.js + dataSync.js + ui-core.js）+ DOM
  * ========================================================================== */
 (function(){
 'use strict';
@@ -43,6 +48,9 @@ const setMapViewMode = (m) => window.SLG.setMapViewMode(m);
 const isOnline = () => window.SLG.isOnline();
 const ATTACK_RULES = () => window.SLG.ATTACK_RULES;
 const getAuth = () => window.SLG.Auth;
+const getAllianceIcons = () => window.SLG.getAllianceIcons();
+const isAllianceIconUsed = (icon, ex) => window.SLG.isAllianceIconUsed(icon, ex);
+const ensureNpcAlliance = () => window.SLG.ensureNpcAlliance();
 
 /* ============================================================
    ① WarQuickPanel — 宣戰快速建立面板
@@ -242,7 +250,6 @@ const WarQuickPanel = (() => {
       }
     }
 
-    /* v8.9.9：跨圖檢查 */
     if(state.settings.warRequireSameMap){
       const ma = getCityMapId ? getCityMapId(from) : '';
       const mb = getCityMapId ? getCityMapId(to) : '';
@@ -1825,7 +1832,6 @@ const NodeCalibration = (() => {
         }
       }
 
-      /* 走 DataSyncManager 統一同步 */
       let syncCount = 0;
       let syncFailed = 0;
       for(const nid in nodes){
@@ -2029,7 +2035,263 @@ const FuzzyMatch = (() => {
 })();
 
 /* ============================================================
-   ⑤ 輔助函式
+   ⑤ ★ v9.0.2 新增：AllianceEditModal — 盟編輯 Modal
+   ============================================================ */
+const AllianceEditModal = (() => {
+  let editingId = null;
+  let pendingColor = '';
+  let eventsBound = false;
+
+  /* ── 開啟 Modal ── */
+  function open(allianceId){
+    const state = getState();
+    const isNew = !allianceId;
+    const a = isNew ? null : state.alliances.find(x => x.id === allianceId);
+
+    editingId = allianceId || null;
+    pendingColor = a ? (a.color || '') : '';
+
+    /* 標題 */
+    document.getElementById('allianceEditTitle').textContent =
+      isNew ? '➕ 新增同盟' : `✏️ 編輯同盟：${a ? a.name : ''}`;
+
+    /* 填入表單 */
+    document.getElementById('aem_icon').value = a ? (a.icon || '') : '';
+    document.getElementById('aem_name').value = a ? a.name : '';
+    document.getElementById('aem_side').value = a ? (a.side || 'ally') : 'ally';
+    document.getElementById('aem_memberCount').value = a ? (a.memberCount || 100) : 100;
+    const yi = a ? (Number(a.totalPower) || 0) / 1e8 : 2;
+    document.getElementById('aem_totalPower').value = yi.toFixed(2);
+
+    updateAvgPreview();
+    renderIconQuickRow();
+    renderColorPicker();
+
+    /* 提示 */
+    const hint = document.getElementById('aem_hint');
+    if(hint){
+      hint.textContent = isNew
+        ? '＊新同盟會自動分配顏色（本方=藍、同盟=綠、NPC=灰、敵方從色池取）'
+        : '＊本方/同盟/NPC 顏色鎖定，僅敵方可改';
+    }
+
+    /* 刪除按鈕 */
+    const delBtn = document.getElementById('aem_delete');
+    if(delBtn) delBtn.style.display = isNew ? 'none' : '';
+
+    bindEvents();
+    document.getElementById('allianceEditModal').classList.add('show');
+    setTimeout(() => {
+      const nameInput = document.getElementById('aem_name');
+      if(nameInput && !isNew) nameInput.focus();
+    }, 100);
+  }
+
+  /* ── 關閉 Modal ── */
+  function close(){
+    document.getElementById('allianceEditModal').classList.remove('show');
+    editingId = null;
+    pendingColor = '';
+  }
+
+  /* ── 平均戰力預覽 ── */
+  function updateAvgPreview(){
+    const mc = parseFloat(document.getElementById('aem_memberCount').value) || 0;
+    const yi = parseFloat(document.getElementById('aem_totalPower').value) || 0;
+    const total = Math.round(yi * 1e8);
+    const avg = mc > 0 ? total / mc : 0;
+    const el = document.getElementById('aem_avgPower');
+    if(el) el.value = formatAvgPower(avg);
+  }
+
+  /* ── 快速選盟徽 ── */
+  function renderIconQuickRow(){
+    const row = document.getElementById('aem_iconQuickRow');
+    if(!row) return;
+    const icons = getAllianceIcons() || [];
+    const curIcon = document.getElementById('aem_icon').value.trim();
+    let html = '';
+    for(const icon of icons){
+      const used = isAllianceIconUsed(icon, editingId);
+      const cls = 'icon-quick' + (used ? ' icon-used' : '') + (icon === curIcon ? ' icon-current' : '');
+      html += `<button type="button" class="${cls}" data-icon="${icon}"${used ? ' disabled' : ''}>${icon}</button>`;
+    }
+    row.innerHTML = html;
+  }
+
+  /* ── 顏色選擇器（呼叫 ui-core.js 的 buildAllianceColorPicker） ── */
+  function renderColorPicker(){
+    const container = document.getElementById('aem_colorPickerContainer');
+    if(!container) return;
+
+    const state = getState();
+    const alliance = editingId ? state.alliances.find(x => x.id === editingId) : null;
+    const side = document.getElementById('aem_side').value;
+    const sideLocked = (side === 'self' || side === 'ally' || side === 'npc');
+    const lockedColor = window.SLG.SIDE_PRIORITY_COLOR[side];
+
+    /* 若鎖定 → 強制使用鎖定色 */
+    if(sideLocked){
+      pendingColor = lockedColor;
+    } else if(!pendingColor){
+      /* 敵方 → 從色池取未使用 */
+      const usedColors = new Set(
+        state.alliances
+          .filter(a => a.id !== editingId && a.color)
+          .map(a => a.color)
+      );
+      for(const c of window.SLG.ALLIANCE_COLOR_PALETTE){
+        if(!usedColors.has(c)){ pendingColor = c; break; }
+      }
+      if(!pendingColor) pendingColor = window.SLG.ALLIANCE_COLOR_PALETTE[0];
+    }
+
+    /* 呼叫 ui-core.js 的 buildAllianceColorPicker */
+    if(window.SLG.buildAllianceColorPicker){
+      window.SLG.buildAllianceColorPicker(container, editingId, pendingColor);
+    }
+  }
+
+  /* ── 事件綁定（只綁一次） ── */
+  function bindEvents(){
+    if(eventsBound) return;
+    eventsBound = true;
+
+    document.getElementById('aem_cancel')?.addEventListener('click', close);
+
+    document.getElementById('aem_save')?.addEventListener('click', save);
+
+    document.getElementById('aem_delete')?.addEventListener('click', () => {
+      if(!editingId) return;
+      const state = getState();
+      const a = state.alliances.find(x => x.id === editingId);
+      if(!a) return;
+      window.SLG.showConfirm('刪除同盟', `確定刪除「${a.name}」？\n\n相關城池會變成 NPC。`, () => {
+        /* 城池的 allianceId 改為 NPC */
+        const npc = ensureNpcAlliance();
+        for(const c of state.cities){
+          if(c.allianceId === editingId){
+            c.allianceId = npc.id;
+            c.side = 'npc';
+            state.entityRev.city[c.id] = (state.entityRev.city[c.id] || 0) + 1;
+            window.SLG.markDirty('city', c.id);
+          }
+        }
+        window.SLG.deleteEntity('alliance', editingId);
+        close();
+        if(window.SLG.R){
+          window.SLG.R.renderAlliances();
+          window.SLG.R.renderCities();
+          window.SLG.R.renderMatrix();
+        }
+        if(window.SLG.CityManager) window.SLG.CityManager.render();
+        if(window.SLG.GameMap) window.SLG.GameMap.render();
+        window.SLG.saveState('important');
+      });
+    });
+
+    document.getElementById('aem_memberCount')?.addEventListener('input', updateAvgPreview);
+    document.getElementById('aem_totalPower')?.addEventListener('input', updateAvgPreview);
+
+    /* 陣營變更 → 重繪顏色選擇器 */
+    document.getElementById('aem_side')?.addEventListener('change', () => {
+      pendingColor = '';
+      renderColorPicker();
+    });
+
+    /* 盟徽快速選擇 */
+    document.getElementById('aem_iconQuickRow')?.addEventListener('click', (e) => {
+      const btn = e.target.closest('.icon-quick');
+      if(!btn || btn.disabled) return;
+      document.getElementById('aem_icon').value = btn.dataset.icon || '';
+      renderIconQuickRow();
+    });
+
+    /* 盟徽手動輸入 → 重繪快速選擇 */
+    document.getElementById('aem_icon')?.addEventListener('input', renderIconQuickRow);
+
+    /* Enter 儲存 */
+    ['aem_name','aem_memberCount','aem_totalPower'].forEach(id => {
+      document.getElementById(id)?.addEventListener('keydown', (e) => {
+        if(e.key === 'Enter'){ e.preventDefault(); save(); }
+      });
+    });
+  }
+
+  /* ── 儲存 ── */
+  function save(){
+    const state = getState();
+    const name = document.getElementById('aem_name').value.trim();
+    if(!name){ alert('請輸入盟名稱'); return; }
+    if(name.length > 20){ alert('盟名稱最多 20 字'); return; }
+
+    const icon = document.getElementById('aem_icon').value.trim();
+    const side = document.getElementById('aem_side').value;
+    const memberCount = parseFloat(document.getElementById('aem_memberCount').value) || 0;
+    const yi = parseFloat(document.getElementById('aem_totalPower').value) || 0;
+    const totalPower = Math.round(yi * 1e8);
+
+    if(memberCount <= 0){ alert('總人數必須大於 0'); return; }
+
+    /* 盟徽檢查 */
+    if(icon && isAllianceIconUsed(icon, editingId)){
+      alert('❌ 此盟徽已被其他盟使用，請更換');
+      return;
+    }
+
+    /* 本方唯一性 */
+    if(side === 'self'){
+      state.alliances.forEach(a => {
+        if(a.side === 'self' && a.id !== editingId){
+          a.side = 'enemy';
+          state.entityRev.alliance[a.id] = (state.entityRev.alliance[a.id] || 0) + 1;
+          window.SLG.markDirty('alliance', a.id);
+        }
+      });
+    }
+
+    const id = editingId || uid();
+    const existing = state.alliances.find(a => a.id === id);
+    let order = existing ? existing.order : null;
+    if(typeof order !== 'number'){
+      const maxOrder = state.alliances.reduce((m, a) =>
+        Math.max(m, typeof a.order === 'number' ? a.order : -1), -1);
+      order = maxOrder + 1;
+    }
+
+    /* 顏色：從選擇器讀取（若有） */
+    const picker = document.getElementById('aem_colorPickerContainer');
+    const selectedColor = picker?.dataset.selectedColor || pendingColor;
+
+    const entity = {
+      id, name, icon, side, memberCount, totalPower,
+      avgPower: totalPower / memberCount,
+      power: totalPower,
+      order,
+      createdAt: existing ? existing.createdAt : Date.now(),
+      color: selectedColor,
+    };
+
+    window.SLG.upsertEntity('alliance', entity);
+
+    close();
+
+    if(window.SLG.R){
+      window.SLG.R.renderAlliances();
+      window.SLG.R.renderMatrix();
+    }
+    if(window.SLG.CityManager) window.SLG.CityManager.render();
+    if(window.SLG.GameMap) window.SLG.GameMap.render();
+    if(window.SLG.renderOverview) window.SLG.renderOverview();
+    window.SLG.saveState('important');
+    logSystem(`✅ 已${existing ? '更新' : '新增'}同盟：${name}`);
+  }
+
+  return { open, close };
+})();
+
+/* ============================================================
+   ⑥ 輔助函式
    ============================================================ */
 
 /* ── 匯入城池後的匹配處理 ── */
@@ -2740,7 +3002,6 @@ function openCityModal(cityId, options){
 
   const zoneSel = document.getElementById('cm_zone');
 
-  /* 戰區依地圖篩選 */
   function refreshZoneOptions(){
     const curMapId = mapSel ? mapSel.value : '';
     const zones = curMapId
@@ -2862,7 +3123,6 @@ async function saveCityFromModal(){
   const wallMin = parseFloat(document.getElementById('cm_wallMin').value) || 0;
   const isCapital = document.getElementById('cm_isCapital').checked;
 
-  /* 未選地圖時提示 */
   if(!mapId && state.mapLibrary.activeMapId){
     const go = confirm(`未選擇所屬地圖。\n\n按「確定」：綁定當前使用中的地圖\n按「取消」：不綁定地圖`);
     if(go){ mapId = state.mapLibrary.activeMapId; }
@@ -2903,7 +3163,6 @@ async function saveCityFromModal(){
   };
   if(hasAnyTier) entity.tierCounts = tierCounts;
 
-  /* 地圖變更處理 */
   const oldMapId = (existingCity && existingCity.mapNode && existingCity.mapNode.mapId) || '';
   if(mapId !== oldMapId){
     /* 換圖 → 不保留 mapNode */
@@ -2911,7 +3170,6 @@ async function saveCityFromModal(){
     entity.mapNode = existingCity.mapNode;
   }
 
-  /* 新圖 / 無 mapNode → 分配座標 */
   if(mapId && !entity.mapNode){
     let x, y;
     if(pendingMapNode){
@@ -2941,7 +3199,6 @@ async function saveCityFromModal(){
   window.SLG.upsertEntity('city', entity);
   if(window.SLG.computeDefStartTimes) window.SLG.computeDefStartTimes(state.cities);
 
-  /* 走 DataSyncManager 統一同步 */
   if(entity.mapNode && mapId && window.SLG.DataSyncManager){
     window.SLG.DataSyncManager.setNode(id, entity.mapNode.x, entity.mapNode.y, {
       source: 'manual',
@@ -2972,7 +3229,7 @@ function deployRender(){
 }
 
 /* ============================================================
-   全域暴露
+   ⑦ 全域暴露
    ============================================================ */
 Object.assign(window.SLG, {
   /* 模組 */
@@ -2980,20 +3237,7 @@ Object.assign(window.SLG, {
   MapLibrary,
   NodeCalibration,
   FuzzyMatch,
-
-  /* 主渲染（別名） */
-  renderAll: () => { const R = window.SLG.R; if(R) R.renderAll(); },
-  renderChat: () => { const R = window.SLG.R; if(R) R.renderChat(); },
-  renderChatBadge: () => { const R = window.SLG.R; if(R) R.renderChatBadge(); },
-  renderCities: () => { const R = window.SLG.R; if(R) R.renderCities(); },
-  renderZones: () => { const R = window.SLG.R; if(R) R.renderZones(); },
-  renderAlliances: () => { const R = window.SLG.R; if(R) R.renderAlliances(); },
-  renderMatrix: () => { const R = window.SLG.R; if(R) R.renderMatrix(); },
-  renderCityMatrix: () => { const R = window.SLG.R; if(R) R.renderCityMatrix(); },
-  populateCityMatrixFilters: () => { const R = window.SLG.R; if(R) R.populateCityMatrixFilters(); },
-  renderIconQuickRow: () => { const R = window.SLG.R; if(R) R.renderIconQuickRow(); },
-  renderNarrative: (lines) => { const R = window.SLG.R; if(R) R.renderNarrative(lines); },
-  renderDebug: (p) => { const R = window.SLG.R; if(R) R.renderDebug(p); },
+  AllianceEditModal,   /* ★ v9.0.2 新增 */
 
   /* 房間 UI */
   updateRoomEditButton,
@@ -3028,7 +3272,7 @@ Object.assign(window.SLG, {
   /* 匯入匹配 */
   onCityImportMatched,
 
-  /* 快捷別名 */
+  /* 快捷別名（盟 inline 編輯，實際由 R 提供） */
   startInlineEditAlliance: (id) => {
     const R = window.SLG.R;
     if(R && R.startInlineEditAlliance) R.startInlineEditAlliance(id);
@@ -3046,5 +3290,13 @@ Object.assign(window.SLG, {
 
 })();
 /* ============================================================================
- * ui-modal.js 結束（v9.0.0）
+ * ui-modal.js 結束（v9.0.2）
+ * ★ v9.0.2 變更摘要：
+ *   1. 新增 AllianceEditModal（盟編輯 Modal）
+ *      - open(id) / close()
+ *      - 顏色選擇器呼叫 window.SLG.buildAllianceColorPicker（從 ui-core.js）
+ *      - 刪除盟時：相關城池自動轉為 NPC
+ *   2. 刪除重複的 renderAll / renderChat / ... 別名（保留在 ui-core.js）
+ *   3. 保留所有原有模組（WarQuickPanel / MapLibrary / NodeCalibration / FuzzyMatch）
+ *   4. 保留所有輔助函式（renderOverview / DistanceTool / 城池 Modal 等）
  * ========================================================================== */
