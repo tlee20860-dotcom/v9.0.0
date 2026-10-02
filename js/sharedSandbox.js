@@ -787,7 +787,7 @@ const SharedSandboxManager = (() => {
   /* ══════════════════════════════════════════════════════
      ⑭ 上傳個人 → 共享（僅超管）
      ══════════════════════════════════════════════════════ */
-  async function uploadPersonalToShared(sandboxId){
+    async function uploadPersonalToShared(sandboxId){
     const db = _getDb();
     if(!db || !sandboxId) throw new Error('缺少 sandboxId');
     if(!state.auth.signedIn) throw new Error('請先登入');
@@ -797,18 +797,48 @@ const SharedSandboxManager = (() => {
       throw new Error('權限不足：只有超管可以上傳個人沙盤到共享');
     }
 
+    /* ★ v9.0.3：從「個人雲端沙盤」讀取，而非當前 state */
+    logSystem('📥 正在讀取個人雲端沙盤...');
+    let personalSandbox = null;
+    try{
+      personalSandbox = await window.SLG.fetchUserSandbox(state.auth.accountUid);
+    }catch(e){
+      throw new Error('讀取個人雲端沙盤失敗：' + e.message);
+    }
+
+    if(!personalSandbox || !personalSandbox.data){
+      throw new Error(
+        '您的個人雲端沙盤為空或尚未上傳。\n\n' +
+        '請先：\n' +
+        '1. 切回「個人沙盤」\n' +
+        '2. 確認有資料\n' +
+        '3. 按「☁️ 立即上傳」\n\n' +
+        '再回來執行此操作。'
+      );
+    }
+
+    const personalData = personalSandbox.data;
+
+    /* 顯示確認（含資料量） */
+    const cityCount = personalData.cities?.length || 0;
+    const allianceCount = personalData.alliances?.length || 0;
+    const zoneCount = personalData.zones?.length || 0;
+    const routeCount = personalData.routes?.length || 0;
+
     const confirmed = confirm(
       `📤 上傳個人沙盤到共享沙盤\n\n` +
-      `⚠️ 這會覆蓋共享沙盤的所有資料，且無法復原！\n\n` +
+      `【將上傳的資料】\n` +
+      `  🏰 城池：${cityCount}\n` +
+      `  🤝 同盟：${allianceCount}\n` +
+      `  🗺️ 戰區：${zoneCount}\n` +
+      `  🛣️ 路線：${routeCount}\n\n` +
+      `⚠️ 這會覆蓋共享沙盤的所有資料！\n` +
       `（舊版會備份到歷史，可還原）\n\n` +
       `確定要上傳嗎？`
     );
     if(!confirmed) return false;
 
-    /* 從個人雲端讀取（或當前記憶體） */
-    const personalData = buildSandboxData();
-
-    /* 寫入共享 */
+    /* 讀取共享沙盤（用於備份舊版） */
     const sandbox = await fetch(sandboxId);
     if(!sandbox) throw new Error('讀取共享沙盤失敗');
 
@@ -862,8 +892,19 @@ const SharedSandboxManager = (() => {
 
     await db.ref().update(updates);
 
-    logSystem(`📤 已上傳個人沙盤到共享：${sandbox.name}（v${payload.version}）`);
+    logSystem(`📤 已上傳個人沙盤到共享：${sandbox.name}（v${payload.version}，${cityCount} 城）`);
     emit(EVT.SHARED_SANDBOXES_UPDATED, { type: 'uploaded', sandboxId });
+
+    /* 若當前正在檢視此共享沙盤 → 重新載入 */
+    if(state.sandboxMode === 'shared' && state.activeSharedSandboxId === sandboxId){
+      try{
+        await reloadCurrentShared();
+        logSystem('🔄 已重新載入共享沙盤（顯示最新上傳的資料）');
+      }catch(e){
+        console.warn('[SharedSB] 重新載入失敗', e);
+      }
+    }
+
     return true;
   }
 
